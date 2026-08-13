@@ -7,6 +7,14 @@ function hasCloud() {
   return Boolean(CLOUD_URL && CLOUD_KEY);
 }
 
+const CLOUD_TIMEOUT_MS = 4500;
+
+function withTimeout(ms = CLOUD_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, done: () => clearTimeout(timer) };
+}
+
 function headers() {
   return {
     apikey: CLOUD_KEY,
@@ -48,12 +56,17 @@ async function cloudGet(key) {
   if (!hasCloud()) return null;
   try {
     const url = `${CLOUD_URL}/rest/v1/swertres_ledgers?id=eq.${encodeURIComponent(CLOUD_ROW_ID)}&select=id,data,updated_at`;
-    const res = await fetch(url, { headers: { ...headers(), Accept: "application/json" } });
-    if (!res.ok) return null;
-    const rows = await res.json();
-    const row = rows?.[0];
-    if (!row?.data) return null;
-    return { key, value: JSON.stringify(row.data), updatedAt: row.updated_at || null, source: "cloud" };
+    const t = withTimeout();
+    try {
+      const res = await fetch(url, { headers: { ...headers(), Accept: "application/json" }, signal: t.signal });
+      if (!res.ok) return null;
+      const rows = await res.json();
+      const row = rows?.[0];
+      if (!row?.data) return null;
+      return { key, value: JSON.stringify(row.data), updatedAt: row.updated_at || null, source: "cloud" };
+    } finally {
+      t.done();
+    }
   } catch {
     return null;
   }
@@ -64,12 +77,18 @@ async function cloudSet(value) {
   try {
     const payload = { id: CLOUD_ROW_ID, data: JSON.parse(value), updated_at: new Date().toISOString() };
     const url = `${CLOUD_URL}/rest/v1/swertres_ledgers?on_conflict=id`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { ...headers(), Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify(payload),
-    });
-    return res.ok;
+    const t = withTimeout();
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { ...headers(), Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(payload),
+        signal: t.signal,
+      });
+      return res.ok;
+    } finally {
+      t.done();
+    }
   } catch {
     return false;
   }
@@ -77,6 +96,15 @@ async function cloudSet(value) {
 
 export const storage = {
   cloudEnabled: hasCloud(),
+
+  getLocal(key) {
+    try {
+      const value = localStorage.getItem(PREFIX + key);
+      return value !== null ? { key, value, source: "local" } : null;
+    } catch {
+      return null;
+    }
+  },
 
   async get(key) {
     let local = null;

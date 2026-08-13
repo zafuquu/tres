@@ -80,22 +80,38 @@ export default function SwertresLedger() {
   const [angleDate, setAngleDate] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
+    const seeded = [...OLD_MACHINE_DATA, ...NEW_MACHINE_DATA].map(rowToRecord);
+    const local = storage.getLocal(STORAGE_KEY);
+
+    // Never block the UI on cloud I/O. Hydrate from local storage immediately,
+    // then reconcile with Supabase in the background.
+    if (local?.value) {
+      try {
+        setAllRecords(mergeRecords(JSON.parse(local.value), []));
+      } catch {
+        setAllRecords(seeded);
+      }
+    } else {
+      setAllRecords(seeded);
+      storage.set(STORAGE_KEY, JSON.stringify(seeded)).catch(() => {});
+    }
+
     (async () => {
       try {
         const res = await storage.get(STORAGE_KEY);
-        if (res && res.value) {
-          setAllRecords(mergeRecords(JSON.parse(res.value), []));
-        } else {
-          const seeded = [...OLD_MACHINE_DATA, ...NEW_MACHINE_DATA].map(rowToRecord);
-          setAllRecords(seeded);
-          await storage.set(STORAGE_KEY, JSON.stringify(seeded));
+        if (cancelled || !res?.value) return;
+        const merged = mergeRecords(JSON.parse(res.value), []);
+        setAllRecords((current) => mergeRecords(current || [], merged));
+        if (storage.cloudEnabled) setLoadError(null);
+      } catch {
+        if (!cancelled && storage.cloudEnabled) {
+          setLoadError("Cloud sync is unavailable right now — continuing with the local copy.");
         }
-      } catch (e) {
-        const seeded = [...OLD_MACHINE_DATA, ...NEW_MACHINE_DATA].map(rowToRecord);
-        setAllRecords(seeded);
-        setLoadError(storage.cloudEnabled ? "Cloud sync could not be reached — using the local copy until it reconnects." : "Cloud sync is not configured — this browser is using local storage only.");
       }
     })();
+
+    return () => { cancelled = true; };
   }, []);
 
   const persist = useCallback(async (next) => {
