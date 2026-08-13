@@ -559,7 +559,7 @@ export default function SwertresLedger() {
         </div>
 
         <section className="workspace-content">
-          {tab === "dashboard" && <Dashboard freqStats={freqStats} n={records.length} leadingCombo={leadingCombo} dateRange={[records[0]?.date, records[records.length - 1]?.date]} machine={machine} nextPrediction={nextPrediction} backtest={backtest} nextEntry={nextEntry} />}
+          {tab === "dashboard" && <Dashboard freqStats={freqStats} n={records.length} leadingCombo={leadingCombo} dateRange={[records[0]?.date, records[records.length - 1]?.date]} machine={machine} nextPrediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} />}
           {tab === "prediction" && <PredictionLab prediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} machine={machine} />}
           {tab === "log" && <LogDraw form={form} updateDigit={updateDigit} addRecord={addRecord} saveMsg={saveMsg} records={allRecords} deleteRecord={deleteRecord} loadError={loadError} nextEntry={nextEntry} />}
           {tab === "patterns" && <Patterns mostRecent={mostRecent} monthlyClustering={monthlyClustering} machine={machine} />}
@@ -574,7 +574,7 @@ function Dashboard({ freqStats, n, leadingCombo, dateRange, machine, nextPredict
   const groups = ["2PM", "5PM", "9PM"];
   return (
     <div className="sans">
-      <PredictionSnapshot prediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} machine={machine} />
+      <PredictionSnapshot prediction={nextPrediction} backtest={backtest} nextEntry={nextEntry} machine={machine} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 26 }}>
         <StatCard label="Draw-days logged" value={n} />
         <StatCard label="Coverage" value={`${dateRange[0]} → ${dateRange[1]}`} small />
