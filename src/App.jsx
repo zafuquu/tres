@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from "recharts";
 import { Plus, Trash2, Grid3x3, TrendingUp, BookOpen, Table2, Stamp, AlertCircle, History, Cpu, Layers } from "lucide-react";
 import { storage } from "./storage";
+import { buildPrediction, getNextPredictionTarget, runWalkForwardBacktest, formatPercent, formatProbability, MODEL_VERSION, FEATURE_LABELS } from "./predictionEngine";
 
 /* ============================================================
    3D LOTTO RESEARCH LEDGER
@@ -74,7 +75,7 @@ export default function SwertresLedger() {
   const [loadError, setLoadError] = useState(null);
   const [machine, setMachine] = useState("new");
   const [tab, setTab] = useState("dashboard");
-  const [form, setForm] = useState({ date: "", s1: ["", "", ""], s2: ["", "", ""], s3: ["", "", ""] });
+  const [form, setForm] = useState({ date: "", slot: "slot1", digits: ["", "", ""] });
   const [saveMsg, setSaveMsg] = useState("");
   const [angleDate, setAngleDate] = useState("");
 
@@ -106,28 +107,66 @@ export default function SwertresLedger() {
     }
   }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
-  useEffect(() => {
-    if (!form.date) setForm((f) => ({ ...f, date: today }));
-    if (!angleDate) setAngleDate(today);
-  }, []); // eslint-disable-line
+  const today = new Date().toLocaleDateString("en-CA");
 
-  function updateDigit(slotKey, i, val) {
+  const normalizeRecord = useCallback((r) => ({
+    date: r.date,
+    slot1: Array.isArray(r.slot1) ? r.slot1.slice(0, 3) : ["", "", ""],
+    slot2: Array.isArray(r.slot2) ? r.slot2.slice(0, 3) : ["", "", ""],
+    slot3: Array.isArray(r.slot3) ? r.slot3.slice(0, 3) : ["", "", ""],
+  }), []);
+
+  const slotComplete = (r, key) => Array.isArray(r?.[key]) && r[key].length === 3 && r[key].every((d) => d !== "" && d !== null && d !== undefined);
+
+  // Manual entry is a strict chronological cursor: 2PM -> 5PM -> 9PM -> next day 2PM.
+  const nextEntry = useMemo(() => {
+    if (!allRecords?.length) return { date: today, slot: "slot1", label: "2PM" };
+    const sorted = [...allRecords].sort((a, b) => (a.date < b.date ? -1 : 1));
+    const byDate = new Map(sorted.map((r) => [r.date, r]));
+    let cursorDate = sorted[sorted.length - 1].date;
+    let cursor = byDate.get(cursorDate);
+    for (const key of ["slot1", "slot2", "slot3"]) {
+      if (!slotComplete(cursor, key)) return { date: cursorDate, slot: key, label: key === "slot1" ? "2PM" : key === "slot2" ? "5PM" : "9PM" };
+    }
+    const d = new Date(`${cursorDate}T12:00:00`);
+    d.setDate(d.getDate() + 1);
+    return { date: d.toLocaleDateString("en-CA"), slot: "slot1", label: "2PM" };
+  }, [allRecords, today]);
+
+  useEffect(() => {
+    if (!angleDate) setAngleDate(today);
+    if (allRecords && (!form.date || form.date !== nextEntry.date || form.slot !== nextEntry.slot)) {
+      setForm({ date: nextEntry.date, slot: nextEntry.slot, digits: ["", "", ""] });
+    }
+  }, [allRecords, nextEntry.date, nextEntry.slot, today]); // eslint-disable-line
+
+  function updateDigit(i, val) {
     const v = val.replace(/[^0-9]/g, "").slice(0, 1);
-    setForm((f) => ({ ...f, [slotKey]: f[slotKey].map((d, idx) => (idx === i ? v : d)) }));
+    setForm((f) => ({ ...f, digits: f.digits.map((d, idx) => (idx === i ? v : d)) }));
   }
 
   async function addRecord() {
-    const { date, s1, s2, s3 } = form;
-    if (!date || [...s1, ...s2, ...s3].some((d) => d === "")) {
-      setSaveMsg("Fill in the date and all nine digits before saving.");
+    const { date, slot, digits } = form;
+    const expected = nextEntry;
+    if (date !== expected.date || slot !== expected.slot) {
+      setSaveMsg(`Entry locked to ${expected.date} · ${expected.label}.`);
       return;
     }
-    const rec = { date, slot1: s1.map(Number), slot2: s2.map(Number), slot3: s3.map(Number) };
+    if (digits.some((d) => d === "")) {
+      setSaveMsg(`Enter all 3 digits for the ${expected.label} result.`);
+      return;
+    }
+    const existing = allRecords.find((r) => r.date === date);
+    const rec = existing ? normalizeRecord(existing) : { date, slot1: ["", "", ""], slot2: ["", "", ""], slot3: ["", "", ""] };
+    if (slotComplete(rec, slot)) {
+      setSaveMsg(`${date} · ${expected.label} is already recorded. The next slot is locked automatically.`);
+      return;
+    }
+    rec[slot] = digits.map(Number);
     const next = [...allRecords.filter((r) => r.date !== date), rec].sort((a, b) => (a.date < b.date ? -1 : 1));
     await persist(next);
-    setSaveMsg(`Saved ${date}.`);
-    setForm({ date: today, s1: ["", "", ""], s2: ["", "", ""], s3: ["", "", ""] });
+    setSaveMsg(`Saved ${date} · ${expected.label}: ${digits.join("")}.`);
+    setForm({ date: expected.date, slot: expected.slot, digits: ["", "", ""] });
   }
 
   async function deleteRecord(date) {
@@ -146,8 +185,12 @@ export default function SwertresLedger() {
     if (!records) return [];
     return POSITIONS.map((p) => {
       const counts = new Array(10).fill(0);
-      records.forEach((r) => counts[r[p.key][p.idx]]++);
-      const n = records.length;
+      records.forEach((r) => {
+        if (Array.isArray(r[p.key]) && r[p.key].length === 3 && r[p.key].every((d) => d !== "" && d !== undefined && d !== null)) {
+          counts[Number(r[p.key][p.idx])]++;
+        }
+      });
+      const n = counts.reduce((a, b) => a + b, 0);
       let topDigit = 0;
       for (let d = 1; d < 10; d++) if (counts[d] > counts[topDigit]) topDigit = d;
       const topCount = counts[topDigit];
@@ -167,13 +210,29 @@ export default function SwertresLedger() {
     return bySlot;
   }, [freqStats]);
 
+  const predictionTarget = useMemo(() => getNextPredictionTarget(allRecords || [], nextEntry), [allRecords, nextEntry]);
+
+  const nextPrediction = useMemo(() => {
+    if (!records || !predictionTarget || machine !== "new") return null;
+    return buildPrediction(records, predictionTarget);
+  }, [records, predictionTarget, machine]);
+
+  const backtest = useMemo(() => {
+    if (!records || machine !== "new") return null;
+    return runWalkForwardBacktest(records, MACHINE_CUTOFF);
+  }, [records, machine]);
+
   const monthlyClustering = useMemo(() => {
     if (!records) return [];
     const byMonth = {};
     records.forEach((r) => {
       const ym = r.date.slice(0, 7);
       byMonth[ym] = byMonth[ym] || [];
-      [r.slot1, r.slot2, r.slot3].forEach((s) => byMonth[ym].push(s[0] * 100 + s[1] * 10 + s[2]));
+      [r.slot1, r.slot2, r.slot3].forEach((s) => {
+        if (Array.isArray(s) && s.length === 3 && s.every((d) => d !== "" && d !== undefined && d !== null)) {
+          byMonth[ym].push(Number(s[0]) * 100 + Number(s[1]) * 10 + Number(s[2]));
+        }
+      });
     });
     return Object.entries(byMonth).map(([ym, vals]) => {
       const n = vals.length;
@@ -366,6 +425,14 @@ export default function SwertresLedger() {
         .stat-value { margin-top:10px; color:#eef6f8; font:800 20px "SFMono-Regular",Consolas,monospace; }
         .stat-value.accent { color:var(--amber); }
 
+        .prediction-snapshot-grid { width:100%; }
+        .prediction-row { min-width:0; }
+        @media (max-width: 760px) {
+          .prediction-snapshot-grid { grid-template-columns: 1fr !important; }
+          .prediction-row { grid-template-columns: 24px 74px minmax(0,1fr) !important; }
+          .prediction-row > span:last-child { display:none; }
+        }
+
         .loading-screen { display:flex; min-height:100vh; align-items:center; justify-content:center; gap:14px; color:var(--muted); }
         .loading-mark { width:42px; height:42px; display:grid; place-items:center; border:1px solid rgba(56,214,160,.4); border-radius:12px; color:var(--accent); font:800 12px monospace; }
         .loading-title { color:var(--text); font:800 11px monospace; letter-spacing:.12em; }
@@ -420,6 +487,7 @@ export default function SwertresLedger() {
           <nav className="nav">
             {[
               { id: "dashboard", label: "Overview", icon: TrendingUp },
+              { id: "prediction", label: "Prediction Lab", icon: Cpu },
               { id: "log", label: "Record Draw", icon: Plus },
               { id: "patterns", label: "Pattern Lab", icon: Grid3x3 },
               { id: "angle", label: "Angle Guide", icon: BookOpen },
@@ -443,6 +511,7 @@ export default function SwertresLedger() {
             <div className="page-kicker">{machine === "new" ? "CURRENT MACHINE" : meta.label.toUpperCase()}</div>
             <div className="page-title">
               {tab === "dashboard" ? "Market-style draw overview" :
+               tab === "prediction" ? "Timeframe prediction lab" :
                tab === "log" ? "Record a new draw" :
                tab === "patterns" ? "Pattern exploration" :
                tab === "angle" ? "Angle Guide analysis" : "Historical draw archive"}
@@ -458,8 +527,9 @@ export default function SwertresLedger() {
         </div>
 
         <section className="workspace-content">
-          {tab === "dashboard" && <Dashboard freqStats={freqStats} n={records.length} leadingCombo={leadingCombo} dateRange={[records[0]?.date, records[records.length - 1]?.date]} machine={machine} />}
-          {tab === "log" && <LogDraw form={form} setForm={setForm} updateDigit={updateDigit} addRecord={addRecord} saveMsg={saveMsg} records={allRecords} deleteRecord={deleteRecord} loadError={loadError} />}
+          {tab === "dashboard" && <Dashboard freqStats={freqStats} n={records.length} leadingCombo={leadingCombo} dateRange={[records[0]?.date, records[records.length - 1]?.date]} machine={machine} nextPrediction={nextPrediction} backtest={backtest} nextEntry={nextEntry} />}
+          {tab === "prediction" && <PredictionLab prediction={nextPrediction} backtest={backtest} nextEntry={nextEntry} machine={machine} />}
+          {tab === "log" && <LogDraw form={form} updateDigit={updateDigit} addRecord={addRecord} saveMsg={saveMsg} records={allRecords} deleteRecord={deleteRecord} loadError={loadError} nextEntry={nextEntry} />}
           {tab === "patterns" && <Patterns mostRecent={mostRecent} monthlyClustering={monthlyClustering} machine={machine} />}
           {tab === "angle" && <AngleGuide angleDate={angleDate} setAngleDate={setAngleDate} angleGrid={angleGrid} />}
           {tab === "entries" && <AllEntries records={records} deleteRecord={deleteRecord} />}
@@ -468,10 +538,11 @@ export default function SwertresLedger() {
     </div>
   );
 }
-function Dashboard({ freqStats, n, leadingCombo, dateRange, machine }) {
+function Dashboard({ freqStats, n, leadingCombo, dateRange, machine, nextPrediction, backtest, nextEntry }) {
   const groups = ["2PM", "5PM", "9PM"];
   return (
     <div className="sans">
+      <PredictionSnapshot prediction={nextPrediction} backtest={backtest} nextEntry={nextEntry} machine={machine} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 26 }}>
         <StatCard label="Draw-days logged" value={n} />
         <StatCard label="Coverage" value={`${dateRange[0]} → ${dateRange[1]}`} small />
@@ -546,6 +617,188 @@ function Dashboard({ freqStats, n, leadingCombo, dateRange, machine }) {
   );
 }
 
+
+function PredictionSnapshot({ prediction, backtest, nextEntry, machine }) {
+  const top = prediction?.candidates?.slice(0, 5) || [];
+  return (
+    <div style={{ marginBottom: 26, border: "1px solid #2d3d49", borderRadius: 10, padding: 16, background: "linear-gradient(145deg,#0d171a,#0c1218)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div>
+          <div className="mono" style={{ color: "#38d6a0", fontSize: 10, fontWeight: 800, letterSpacing: ".12em" }}>NEXT DRAW / {prediction?.modelVersion || MODEL_VERSION}</div>
+          <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{nextEntry.date} · {nextEntry.label}</div>
+          <div style={{ marginTop: 5, color: "#8b9aa7", fontSize: 12.5 }}>
+            {machine === "new" ? "Timeframe-aware ensemble; descriptive research model, not a guarantee." : "Switch to Current machine for future-draw prediction."}
+          </div>
+        </div>
+        {backtest && (
+          <div className="mono" style={{ padding: "7px 10px", borderRadius: 999, border: "1px solid rgba(241,184,91,.28)", background: "rgba(241,184,91,.08)", color: "#e5c98f", fontSize: 10, fontWeight: 700 }}>
+            WALK-FORWARD TOP-3 {formatPercent(backtest.top3Rate)} · BASE {formatPercent(backtest.randomTop3Rate)}
+          </div>
+        )}
+      </div>
+
+      {!prediction?.ready ? (
+        <div style={{ marginTop: 15, padding: 12, borderRadius: 7, background: "#111a23", color: "#8b9aa7", fontSize: 12.5 }}>
+          Building the model needs at least 45 prior draws for this timeframe. Current training observations: {prediction?.trainingEvents || 0}.
+        </div>
+      ) : (
+        <div className="prediction-snapshot-grid" style={{ marginTop: 16, display: "grid", gridTemplateColumns: "minmax(0,1fr) 260px", gap: 14 }}>
+          <div style={{ display: "grid", gap: 7 }}>
+            {top.map((item, i) => (
+              <div key={item.candidate} className="prediction-row" style={{ display: "grid", gridTemplateColumns: "28px 86px minmax(0,1fr) 92px", gap: 10, alignItems: "center", padding: "9px 10px", border: "1px solid #22303b", borderRadius: 7, background: i === 0 ? "rgba(56,214,160,.07)" : "#0d131a" }}>
+                <span className="mono" style={{ color: i === 0 ? "#38d6a0" : "#5f6d78", fontSize: 11 }}>#{i + 1}</span>
+                <strong className="mono" style={{ fontSize: 21, letterSpacing: ".08em" }}>{item.candidate}</strong>
+                <span style={{ fontSize: 11.5, color: "#9baab5" }}>{item.reasons.join(" + ")}</span>
+                <span className="mono" style={{ textAlign: "right", color: "#b9c7cf", fontSize: 10.5 }}>{item.displayScore.toFixed(1)} score</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ border: "1px solid #22303b", borderRadius: 7, padding: 12, background: "#0d131a" }}>
+            <div className="mono" style={{ fontSize: 10, color: "#8b9aa7", letterSpacing: ".08em" }}>MODEL CONTEXT</div>
+            <div style={{ marginTop: 9, fontSize: 12.5 }}><b>Training</b> {prediction.trainingEvents} draws</div>
+            <div style={{ marginTop: 7, fontSize: 12.5 }}><b>Previous</b> {prediction.previous ? `${prediction.previous.label} ${prediction.previous.digits.join("")}` : "—"}</div>
+            <div style={{ marginTop: 7, fontSize: 12.5 }}><b>Angle candidates</b> {prediction.angleCombos?.length || 0}</div>
+            <div style={{ marginTop: 7, color: "#8b9aa7", fontSize: 11.5, lineHeight: 1.5 }}>Angle/mirror features are intentionally low-weight until out-of-sample evidence supports increasing them.</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PredictionLab({ prediction, backtest, nextEntry, machine }) {
+  const weightEntries = prediction?.config?.weights
+    ? Object.entries(prediction.config.weights).sort((a, b) => b[1] - a[1])
+    : [];
+
+  return (
+    <div className="sans">
+      <SectionTitle>Prediction Lab</SectionTitle>
+      <p style={{ fontSize: 13, color: "#8b9aa7", marginTop: 6, maxWidth: 820, lineHeight: 1.55 }}>
+        A timeframe-specific research model that scores all 1,000 exact 3-digit candidates. The ensemble learns signal weights from prior walk-forward observations, tunes its recency window, and calibrates score temperature before ranking the next chronological draw.
+      </p>
+
+      <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10 }}>
+        <StatCard label="TARGET" value={`${nextEntry.date} ${nextEntry.label}`} small />
+        <StatCard label="MODEL" value={MODEL_VERSION} small />
+        <StatCard label="TRAINING" value={`${prediction?.trainingEvents || 0}`} small />
+        <StatCard label="RECENCY WINDOW" value={prediction?.config?.recentWindow ? `${prediction.config.recentWindow} draws` : "—"} small />
+        <StatCard label="TOP-1 OOS" value={backtest ? formatPercent(backtest.top1Rate) : "—"} small accent />
+        <StatCard label="TOP-3 OOS" value={backtest ? formatPercent(backtest.top3Rate) : "—"} small />
+      </div>
+
+      {machine !== "new" && (
+        <div style={{ marginTop: 14, padding: 12, border: "1px solid rgba(241,184,91,.25)", borderRadius: 7, background: "rgba(241,184,91,.07)", color: "#d9bd84", fontSize: 12.5 }}>
+          Prediction is limited to the Current machine because the retired machine has a different mechanical history. Statistical views remain available for Old and Combined.
+        </div>
+      )}
+
+      {prediction?.ready ? (
+        <>
+          <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "minmax(0,1.3fr) minmax(280px,.7fr)", gap: 12 }}>
+            <div style={{ border: "1px solid #2d3d49", borderRadius: 9, padding: 15, background: "linear-gradient(145deg,#0d171a,#0c1218)" }}>
+              <div className="mono" style={{ fontSize: 10, color: "#8b9aa7", letterSpacing: ".1em" }}>CURRENT MODEL STATE</div>
+              <div style={{ display: "flex", alignItems: "end", gap: 18, marginTop: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="mono" style={{ fontSize: 11, color: "#8b9aa7" }}>TOP CANDIDATE</div>
+                  <div className="mono" style={{ marginTop: 3, fontSize: 34, fontWeight: 900, letterSpacing: ".11em" }}>{prediction.candidates[0]?.candidate || "—"}</div>
+                </div>
+                <div>
+                  <div className="mono" style={{ fontSize: 11, color: "#8b9aa7" }}>RELATIVE PROBABILITY</div>
+                  <div className="mono" style={{ marginTop: 4, fontSize: 20, fontWeight: 800, color: "#38d6a0" }}>{formatProbability(prediction.top1Probability)}</div>
+                </div>
+                <div>
+                  <div className="mono" style={{ fontSize: 11, color: "#8b9aa7" }}>SEPARATION</div>
+                  <div className="mono" style={{ marginTop: 4, fontSize: 12, fontWeight: 700 }}>{prediction.confidence}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 12, color: "#8b9aa7", fontSize: 11.5, lineHeight: 1.5 }}>
+                Probability is calibrated over the model's 1,000 candidate space. It is a relative model probability, not a claim about the physical lottery mechanism.
+              </div>
+            </div>
+            <div style={{ border: "1px solid #22303b", borderRadius: 9, padding: 15, background: "#0d131a" }}>
+              <div className="mono" style={{ fontSize: 10, color: "#8b9aa7", letterSpacing: ".1em" }}>MODEL HEALTH</div>
+              <div style={{ marginTop: 9, display: "grid", gap: 7, fontSize: 12.5 }}>
+                <div><b>Previous draw:</b> {prediction.previous ? `${prediction.previous.date} ${prediction.previous.label} · ${prediction.previous.digits.join("")}` : "—"}</div>
+                <div><b>Validation sample:</b> {prediction.config.validationN || 0}</div>
+                <div><b>Temperature:</b> {prediction.config.temperature?.toFixed(2) || "—"}</div>
+                <div><b>Angle direct in Top 10:</b> {prediction.angleDirect}</div>
+                <div><b>Mirror in Top 10:</b> {prediction.angleMirror}</div>
+              </div>
+            </div>
+          </div>
+
+          <SectionTitle style={{ marginTop: 30 }}>Learned signal weights</SectionTitle>
+          <p style={{ fontSize: 12.5, color: "#8b9aa7", marginTop: 6, maxWidth: 760 }}>
+            These weights are learned from historical validation observations. A feature only earns influence when its out-of-sample ranking evidence supports it; the Angle/Mirror contribution remains capped.
+          </p>
+          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 8 }}>
+            {weightEntries.map(([name, weight]) => (
+              <div key={name} style={{ border: "1px solid #22303b", borderRadius: 7, padding: 10, background: "#0d131a" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 12 }}>{FEATURE_LABELS[name]}</span>
+                  <span className="mono" style={{ fontSize: 11, color: name === "angle" ? "#f1b85b" : "#38d6a0" }}>{(weight * 100).toFixed(1)}%</span>
+                </div>
+                <div style={{ marginTop: 7, height: 5, borderRadius: 99, background: "#17222c", overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(100, weight * 100 * 2.2)}%`, height: "100%", background: name === "angle" ? "#f1b85b" : "#38d6a0" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <SectionTitle style={{ marginTop: 30 }}>Ranked candidates</SectionTitle>
+          <div style={{ marginTop: 12, overflowX: "auto", border: "1px solid #22303b", borderRadius: 7 }}>
+            <table className="datatable mono" style={{ fontSize: 12.5 }}>
+              <thead><tr><th>#</th><th>Combination</th><th>Relative probability</th><th>Why it ranks here</th><th>Angle</th></tr></thead>
+              <tbody>
+                {prediction.candidates.map((item, i) => (
+                  <tr key={item.candidate}>
+                    <td style={{ textAlign: "center", color: i < 3 ? "#38d6a0" : "#8b9aa7" }}>{i + 1}</td>
+                    <td style={{ textAlign: "center", fontWeight: 800, fontSize: 18 }}>{item.candidate}</td>
+                    <td style={{ textAlign: "right" }}>{item.displayScore.toFixed(3)}%</td>
+                    <td>{item.reasons.join(" + ")}</td>
+                    <td style={{ textAlign: "center" }}>{item.angleBoost > 0 ? (item.angleBoost === 1 ? "DIRECT" : "MIRROR") : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <SectionTitle style={{ marginTop: 30 }}>Walk-forward validation</SectionTitle>
+          {backtest && <>
+            <p style={{ fontSize: 13, color: "#8b9aa7", marginTop: 6, maxWidth: 820, lineHeight: 1.5 }}>
+              Every historical test point uses only information available before that draw. Model weights are periodically re-learned from earlier observations, then frozen for the following block of draws to reduce look-ahead bias.
+            </p>
+            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
+              {[['Top-1 exact', backtest.top1Rate, backtest.randomTop1Rate], ['Top-3 exact', backtest.top3Rate, backtest.randomTop3Rate], ['Top-5 exact', backtest.top5Rate, backtest.randomTop5Rate], ['Top-1 family', backtest.family1Rate, backtest.randomFamily1Rate], ['Top-5 family', backtest.family5Rate, backtest.randomFamily5Rate]].map(([label, value, base]) => (
+                <div key={label} style={{ border: "1px solid #22303b", borderRadius: 7, padding: 12, background: "#0d131a" }}>
+                  <div className="mono" style={{ fontSize: 10, color: "#8b9aa7" }}>{label.toUpperCase()}</div>
+                  <div style={{ marginTop: 8, fontSize: 22, fontWeight: 800 }}>{formatPercent(value)}</div>
+                  <div className="mono" style={{ marginTop: 4, fontSize: 10, color: "#5f6d78" }}>baseline {formatPercent(base)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 14, overflowX: "auto", border: "1px solid #22303b", borderRadius: 7 }}>
+              <table className="datatable mono" style={{ fontSize: 12 }}>
+                <thead><tr><th>Timeframe</th><th>Test N</th><th>Top-1</th><th>Top-3</th><th>Top-5</th></tr></thead>
+                <tbody>{["slot1","slot2","slot3"].map((slot) => <tr key={slot}><td>{slot === "slot1" ? "2PM" : slot === "slot2" ? "5PM" : "9PM"}</td><td>{backtest.bySlot[slot].n}</td><td>{formatPercent(backtest.slotSummary[slot].top1Rate)}</td><td>{formatPercent(backtest.slotSummary[slot].top3Rate)}</td><td>{formatPercent(backtest.slotSummary[slot].top5Rate)}</td></tr>)}</tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11.5, color: "#6f7d88" }}>
+              Walk-forward test set: {backtest.n.toLocaleString()} draws · Mean reciprocal rank: {backtest.mrr.toFixed(4)} · Model performance can change as more results are logged.
+            </div>
+          </>}
+        </>
+      ) : (
+        <div style={{ marginTop: 18, padding: 15, border: "1px solid #22303b", borderRadius: 7, background: "#0d131a", color: "#8b9aa7" }}>
+          The model is waiting for enough historical observations for this timeframe. You can still use the statistical and Angle Guide views while the training window builds.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatCard({ label, value, small, accent }) {
   return (
     <div className="stat-card">
@@ -558,34 +811,37 @@ function SectionTitle({ children, style }) {
   return <h2 className="section-title" style={style}>{children}</h2>;
 }
 
-function LogDraw({ form, setForm, updateDigit, addRecord, saveMsg, records, deleteRecord, loadError }) {
-  const recent = [...records].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 6);
+function LogDraw({ form, updateDigit, addRecord, saveMsg, records, deleteRecord, loadError, nextEntry }) {
+  const recent = [...records].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
+  const label = nextEntry.label;
+  const complete = (slot) => Array.isArray(slot) && slot.length === 3 && slot.every((d) => d !== "" && d !== undefined && d !== null);
   return (
     <div className="sans" style={{ display: "grid", gridTemplateColumns: "minmax(280px,380px) 1fr", gap: 28 }}>
       <div>
-        <SectionTitle>Add today's results</SectionTitle>
+        <SectionTitle>Record next draw</SectionTitle>
         {loadError && <div style={{ fontSize: 12.5, color: "#f1b85b", margin: "8px 0" }}>{loadError}</div>}
-        <div style={{ marginTop: 14 }}>
-          <label className="mono" style={{ fontSize: 11, color: "#8b9aa7" }}>DATE</label>
-          <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className="mono"
-            style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px", border: "1px solid #22303b", borderRadius: 4, fontSize: 14 }} />
-        </div>
-        {[["2PM", "s1"], ["5PM", "s2"], ["9PM", "s3"]].map(([label, key]) => (
-          <div key={key} style={{ marginTop: 14 }}>
-            <label className="mono" style={{ fontSize: 11, color: "#8b9aa7" }}>{label} RESULT</label>
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              {form[key].map((v, i) => (
-                <input key={i} type="text" inputMode="numeric" className="mono digit" value={v} onChange={(e) => updateDigit(key, i, e.target.value)}
-                  style={{ width: 48, height: 48, fontSize: 20, fontWeight: 700, border: "1px solid #22303b", borderRadius: 4 }} />
-              ))}
-            </div>
+        <div style={{ marginTop: 14, padding: 16, background: "#0d131a", border: "1px solid #22303b", borderRadius: 6 }}>
+          <div className="mono" style={{ fontSize: 10.5, color: "#8b9aa7", letterSpacing: "0.08em" }}>NEXT DRAW TO RECORD</div>
+          <div className="mono" style={{ marginTop: 7, fontSize: 21, fontWeight: 800 }}>{nextEntry.date}</div>
+          <div style={{ marginTop: 4, fontSize: 13, color: "#1f9d77", fontWeight: 700 }}>{label} · SLOT OPEN</div>
+          <div style={{ marginTop: 10, fontSize: 12, color: "#8b9aa7", lineHeight: 1.5 }}>
+            The ledger advances automatically: <b>2PM → 5PM → 9PM → next day 2PM</b>. You cannot skip a timeframe or overwrite an existing result.
           </div>
-        ))}
-        <button onClick={addRecord} className="mono"
-          style={{ marginTop: 20, width: "100%", padding: "11px 0", background: "#edf3f7", color: "#0d131a", border: "none", borderRadius: 5, fontSize: 13.5, fontWeight: 700, letterSpacing: "0.04em", cursor: "pointer" }}>
-          SAVE ENTRY
+        </div>
+        <div style={{ marginTop: 18 }}>
+          <label className="mono" style={{ fontSize: 11, color: "#8b9aa7" }}>{label} RESULT</label>
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            {form.digits.map((v, i) => (
+              <input key={i} type="text" inputMode="numeric" maxLength={1} autoComplete="off" className="mono digit" value={v}
+                onChange={(e) => updateDigit(i, e.target.value)}
+                style={{ width: 56, height: 56, fontSize: 22, fontWeight: 700, border: "1px solid #22303b", borderRadius: 4 }} />
+            ))}
+          </div>
+        </div>
+        <button onClick={addRecord} className="mono" style={{ marginTop: 20, width: "100%", padding: "12px 0", background: "#edf3f7", color: "#0d131a", border: "none", borderRadius: 5, fontSize: 13.5, fontWeight: 800, letterSpacing: "0.04em", cursor: "pointer" }}>
+          SAVE {label} RESULT
         </button>
-        {saveMsg && <div style={{ fontSize: 12.5, color: "#1f9d77", marginTop: 10 }}>{saveMsg}</div>}
+        {saveMsg && <div style={{ fontSize: 12.5, color: saveMsg.toLowerCase().includes("saved") ? "#1f9d77" : "#f1b85b", marginTop: 10 }}>{saveMsg}</div>}
       </div>
       <div>
         <SectionTitle>Recently logged (all machines)</SectionTitle>
@@ -595,12 +851,10 @@ function LogDraw({ form, setForm, updateDigit, addRecord, saveMsg, records, dele
             {recent.map((r) => (
               <tr key={r.date}>
                 <td>{r.date}</td>
-                <td style={{ textAlign: "center" }}>{r.slot1.join("")}</td>
-                <td style={{ textAlign: "center" }}>{r.slot2.join("")}</td>
-                <td style={{ textAlign: "center" }}>{r.slot3.join("")}</td>
-                <td style={{ textAlign: "center" }}>
-                  <button onClick={() => deleteRecord(r.date)} style={{ border: "none", background: "none", cursor: "pointer", color: "#f1b85b" }}><Trash2 size={14} /></button>
-                </td>
+                <td style={{ textAlign: "center" }}>{complete(r.slot1) ? r.slot1.join("") : "—"}</td>
+                <td style={{ textAlign: "center" }}>{complete(r.slot2) ? r.slot2.join("") : "—"}</td>
+                <td style={{ textAlign: "center" }}>{complete(r.slot3) ? r.slot3.join("") : "—"}</td>
+                <td style={{ textAlign: "center" }}><button onClick={() => deleteRecord(r.date)} style={{ border: "none", background: "none", cursor: "pointer", color: "#f1b85b" }}><Trash2 size={14} /></button></td>
               </tr>
             ))}
           </tbody>
@@ -678,9 +932,8 @@ function AngleGuide({ angleDate, setAngleDate, angleGrid }) {
   return (
     <div className="sans">
       <SectionTitle>Angle Guide method (tested, informational only)</SectionTitle>
-      <p style={{ fontSize: 13, color: "#8b9aa7", marginTop: 6, marginBottom: 16, maxWidth: 640 }}>
-        Generates the folk "Angle Guide" grid from a date's last digit. Tested against 696 real draws: straight
-        matches p=0.42, rambolito matches p=0.37 — indistinguishable from chance. Included for reference only.
+      <p style={{ fontSize: 13, color: "#8b9aa7", marginTop: 6, marginBottom: 16, maxWidth: 700, lineHeight: 1.55 }}>
+        Generates the folk "Angle Guide" grid from a date's last digit. In the upgraded model it is treated as a low-weight hypothesis feature rather than a primary predictor. Its weight is intentionally capped until walk-forward testing shows repeatable out-of-sample improvement.
       </p>
       <div style={{ marginBottom: 18 }}>
         <label className="mono" style={{ fontSize: 11, color: "#8b9aa7" }}>DATE</label>
@@ -726,9 +979,9 @@ function AllEntries({ records, deleteRecord }) {
             {sorted.map((r) => (
               <tr key={r.date}>
                 <td>{r.date}</td>
-                <td style={{ textAlign: "center" }}>{r.slot1.join("")}</td>
-                <td style={{ textAlign: "center" }}>{r.slot2.join("")}</td>
-                <td style={{ textAlign: "center" }}>{r.slot3.join("")}</td>
+                <td style={{ textAlign: "center" }}>{r.slot1?.every((d) => d !== "" && d !== undefined && d !== null) ? r.slot1.join("") : "—"}</td>
+                <td style={{ textAlign: "center" }}>{r.slot2?.every((d) => d !== "" && d !== undefined && d !== null) ? r.slot2.join("") : "—"}</td>
+                <td style={{ textAlign: "center" }}>{r.slot3?.every((d) => d !== "" && d !== undefined && d !== null) ? r.slot3.join("") : "—"}</td>
                 <td style={{ textAlign: "center" }}>
                   <button onClick={() => deleteRecord(r.date)} style={{ border: "none", background: "none", cursor: "pointer", color: "#f1b85b" }}><Trash2 size={13} /></button>
                 </td>
