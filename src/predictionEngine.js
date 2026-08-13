@@ -8,7 +8,7 @@ const MIN_TRAINING_EVENTS = 45;
 const TUNING_EVENTS = 24;
 const TUNING_MIN_HISTORY = 45;
 const BACKTEST_RETRAIN_EVERY = 240;
-export const MODEL_VERSION = "TWE-2.0";
+export const MODEL_VERSION = "TWE-2.1";
 
 export const FEATURE_LABELS = {
   base: "Timeframe frequency",

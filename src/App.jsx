@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from "recharts";
 import { Plus, Trash2, Grid3x3, TrendingUp, BookOpen, Table2, Stamp, AlertCircle, History, Cpu, Layers } from "lucide-react";
-import { storage } from "./storage";
+import { storage, mergeRecords } from "./storage";
 import { buildPrediction, getNextPredictionTarget, runWalkForwardBacktest, formatPercent, formatProbability, MODEL_VERSION, FEATURE_LABELS } from "./predictionEngine";
 
 /* ============================================================
@@ -84,7 +84,7 @@ export default function SwertresLedger() {
       try {
         const res = await storage.get(STORAGE_KEY);
         if (res && res.value) {
-          setAllRecords(JSON.parse(res.value));
+          setAllRecords(mergeRecords(JSON.parse(res.value), []));
         } else {
           const seeded = [...OLD_MACHINE_DATA, ...NEW_MACHINE_DATA].map(rowToRecord);
           setAllRecords(seeded);
@@ -93,16 +93,17 @@ export default function SwertresLedger() {
       } catch (e) {
         const seeded = [...OLD_MACHINE_DATA, ...NEW_MACHINE_DATA].map(rowToRecord);
         setAllRecords(seeded);
-        setLoadError("Could not reach saved storage — starting from the built-in history. New entries will still try to save.");
+        setLoadError(storage.cloudEnabled ? "Cloud sync could not be reached — using the local copy until it reconnects." : "Cloud sync is not configured — this browser is using local storage only.");
       }
     })();
   }, []);
 
   const persist = useCallback(async (next) => {
-    setAllRecords(next);
     try {
-      await storage.set(STORAGE_KEY, JSON.stringify(next));
+      const saved = await storage.set(STORAGE_KEY, JSON.stringify(next));
+      setAllRecords(saved?.value ? JSON.parse(saved.value) : next);
     } catch (e) {
+      setAllRecords(next);
       setSaveMsg("Could not save to storage — kept in this session only.");
     }
   }, []);
@@ -165,7 +166,7 @@ export default function SwertresLedger() {
     rec[slot] = digits.map(Number);
     const next = [...allRecords.filter((r) => r.date !== date), rec].sort((a, b) => (a.date < b.date ? -1 : 1));
     await persist(next);
-    setSaveMsg(`Saved ${date} · ${expected.label}: ${digits.join("")}.`);
+    setSaveMsg(`Saved ${date} · ${expected.label}: ${digits.join("")}${storage.cloudEnabled ? " · synced" : " · local only"}.`);
     setForm({ date: expected.date, slot: expected.slot, digits: ["", "", ""] });
   }
 
@@ -210,16 +211,31 @@ export default function SwertresLedger() {
     return bySlot;
   }, [freqStats]);
 
-  const predictionTarget = useMemo(() => getNextPredictionTarget(allRecords || [], nextEntry), [allRecords, nextEntry]);
+  const predictionEntry = useMemo(() => {
+    if (!records?.length) return nextEntry;
+    const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
+    const latest = sorted[sorted.length - 1];
+    const slotCompleteForPrediction = (r, slot) => Array.isArray(r?.[slot]) && r[slot].length === 3 && r[slot].every((d) => d !== "" && d !== null && d !== undefined && Number.isInteger(Number(d)));
+    for (const slot of ["slot1", "slot2", "slot3"]) {
+      if (!slotCompleteForPrediction(latest, slot)) {
+        return { date: latest.date, slot, label: slot === "slot1" ? "2PM" : slot === "slot2" ? "5PM" : "9PM" };
+      }
+    }
+    const d = new Date(`${latest.date}T12:00:00`);
+    d.setDate(d.getDate() + 1);
+    return { date: d.toLocaleDateString("en-CA"), slot: "slot1", label: "2PM" };
+  }, [records, nextEntry]);
+
+  const predictionTarget = useMemo(() => getNextPredictionTarget(records || [], predictionEntry), [records, predictionEntry]);
 
   const nextPrediction = useMemo(() => {
-    if (!records || !predictionTarget || machine !== "new") return null;
+    if (!records || !predictionTarget) return null;
     return buildPrediction(records, predictionTarget);
-  }, [records, predictionTarget, machine]);
+  }, [records, predictionTarget]);
 
   const backtest = useMemo(() => {
-    if (!records || machine !== "new") return null;
-    return runWalkForwardBacktest(records, MACHINE_CUTOFF);
+    if (!records) return null;
+    return runWalkForwardBacktest(records, machine === "new" ? MACHINE_CUTOFF : machine === "old" ? null : null);
   }, [records, machine]);
 
   const monthlyClustering = useMemo(() => {
@@ -528,7 +544,7 @@ export default function SwertresLedger() {
 
         <section className="workspace-content">
           {tab === "dashboard" && <Dashboard freqStats={freqStats} n={records.length} leadingCombo={leadingCombo} dateRange={[records[0]?.date, records[records.length - 1]?.date]} machine={machine} nextPrediction={nextPrediction} backtest={backtest} nextEntry={nextEntry} />}
-          {tab === "prediction" && <PredictionLab prediction={nextPrediction} backtest={backtest} nextEntry={nextEntry} machine={machine} />}
+          {tab === "prediction" && <PredictionLab prediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} machine={machine} />}
           {tab === "log" && <LogDraw form={form} updateDigit={updateDigit} addRecord={addRecord} saveMsg={saveMsg} records={allRecords} deleteRecord={deleteRecord} loadError={loadError} nextEntry={nextEntry} />}
           {tab === "patterns" && <Patterns mostRecent={mostRecent} monthlyClustering={monthlyClustering} machine={machine} />}
           {tab === "angle" && <AngleGuide angleDate={angleDate} setAngleDate={setAngleDate} angleGrid={angleGrid} />}
@@ -542,7 +558,7 @@ function Dashboard({ freqStats, n, leadingCombo, dateRange, machine, nextPredict
   const groups = ["2PM", "5PM", "9PM"];
   return (
     <div className="sans">
-      <PredictionSnapshot prediction={nextPrediction} backtest={backtest} nextEntry={nextEntry} machine={machine} />
+      <PredictionSnapshot prediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} machine={machine} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 26 }}>
         <StatCard label="Draw-days logged" value={n} />
         <StatCard label="Coverage" value={`${dateRange[0]} → ${dateRange[1]}`} small />
@@ -627,7 +643,7 @@ function PredictionSnapshot({ prediction, backtest, nextEntry, machine }) {
           <div className="mono" style={{ color: "#38d6a0", fontSize: 10, fontWeight: 800, letterSpacing: ".12em" }}>NEXT DRAW / {prediction?.modelVersion || MODEL_VERSION}</div>
           <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800 }}>{nextEntry.date} · {nextEntry.label}</div>
           <div style={{ marginTop: 5, color: "#8b9aa7", fontSize: 12.5 }}>
-            {machine === "new" ? "Timeframe-aware ensemble; descriptive research model, not a guarantee." : "Switch to Current machine for future-draw prediction."}
+            {machine === "new" ? "Current-machine timeframe ensemble; descriptive research model, not a guarantee." : machine === "combined" ? "Combined historical ensemble; useful for research and comparison, not a mechanism forecast." : "Retired-machine historical model; use for retrospective research, not future-mechanism claims."}
           </div>
         </div>
         {backtest && (
@@ -687,9 +703,14 @@ function PredictionLab({ prediction, backtest, nextEntry, machine }) {
         <StatCard label="TOP-3 OOS" value={backtest ? formatPercent(backtest.top3Rate) : "—"} small />
       </div>
 
-      {machine !== "new" && (
+      {machine === "combined" && (
+        <div style={{ marginTop: 14, padding: 12, border: "1px solid rgba(86,148,255,.22)", borderRadius: 7, background: "rgba(86,148,255,.06)", color: "#a9c7ee", fontSize: 12.5 }}>
+          Combined prediction pools both machine histories for research comparison. Current-machine prediction remains the primary forward-looking view.
+        </div>
+      )}
+      {machine === "old" && (
         <div style={{ marginTop: 14, padding: 12, border: "1px solid rgba(241,184,91,.25)", borderRadius: 7, background: "rgba(241,184,91,.07)", color: "#d9bd84", fontSize: 12.5 }}>
-          Prediction is limited to the Current machine because the retired machine has a different mechanical history. Statistical views remain available for Old and Combined.
+          Old-machine prediction is retrospective only because that machine is retired. It is kept for historical model comparison.
         </div>
       )}
 
