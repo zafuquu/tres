@@ -244,15 +244,42 @@ export default function SwertresLedger() {
 
   const predictionTarget = useMemo(() => getNextPredictionTarget(records || [], predictionEntry), [records, predictionEntry]);
 
-  const nextPrediction = useMemo(() => {
-    if (!records || !predictionTarget) return null;
-    return buildPrediction(records, predictionTarget);
-  }, [records, predictionTarget]);
+  // PERFORMANCE FIX: the prediction engine re-tunes its weights by scoring all
+  // 1,000 candidate combinations across thousands of historical draws. That is
+  // tens of millions of synchronous operations - running it on every mount and
+  // every machine-view switch (as before) froze the browser tab regardless of
+  // which section you were looking at. It now only runs when you actually open
+  // "Prediction Lab", and only against a capped, most-recent slice of history
+  // (still statistically meaningful, but bounded so it can't hang for a minute
+  // on the Old/Combined views, which have 10,000+ individual draws).
+  const BACKTEST_MAX_EVENTS_RECORDS = 900; // ~2,700 individual draws, capped for responsiveness
 
+  const predictionRecords = useMemo(() => {
+    if (!records) return records;
+    if (records.length <= BACKTEST_MAX_EVENTS_RECORDS) return records;
+    return records.slice(-BACKTEST_MAX_EVENTS_RECORDS);
+  }, [records]);
+
+  const [predictionTabVisited, setPredictionTabVisited] = useState(false);
+  useEffect(() => {
+    if (tab === "prediction" || tab === "dashboard") setPredictionTabVisited(true);
+  }, [tab]);
+
+  const nextPrediction = useMemo(() => {
+    if (!predictionTabVisited) return null;
+    if (!predictionRecords || !predictionTarget) return null;
+    return buildPrediction(predictionRecords, predictionTarget);
+  }, [predictionTabVisited, predictionRecords, predictionTarget]);
+
+  const [backtestRequested, setBacktestRequested] = useState(false);
+  // Require a fresh click after switching machine views, so a stale backtest
+  // from a different dataset can never be shown without the user asking for it.
+  useEffect(() => { setBacktestRequested(false); }, [machine]);
   const backtest = useMemo(() => {
-    if (!records) return null;
-    return runWalkForwardBacktest(records, machine === "new" ? MACHINE_CUTOFF : machine === "old" ? null : null);
-  }, [records, machine]);
+    if (!backtestRequested) return null;
+    if (!predictionRecords) return null;
+    return runWalkForwardBacktest(predictionRecords, machine === "new" ? MACHINE_CUTOFF : machine === "old" ? null : null);
+  }, [backtestRequested, predictionRecords, machine]);
 
   const monthlyClustering = useMemo(() => {
     if (!records) return [];
@@ -560,7 +587,7 @@ export default function SwertresLedger() {
 
         <section className="workspace-content">
           {tab === "dashboard" && <Dashboard freqStats={freqStats} n={records.length} leadingCombo={leadingCombo} dateRange={[records[0]?.date, records[records.length - 1]?.date]} machine={machine} nextPrediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} />}
-          {tab === "prediction" && <PredictionLab prediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} machine={machine} />}
+          {tab === "prediction" && <PredictionLab prediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} machine={machine} onRunBacktest={() => setBacktestRequested(true)} />}
           {tab === "log" && <LogDraw form={form} updateDigit={updateDigit} addRecord={addRecord} saveMsg={saveMsg} records={allRecords} deleteRecord={deleteRecord} loadError={loadError} nextEntry={nextEntry} />}
           {tab === "patterns" && <Patterns mostRecent={mostRecent} monthlyClustering={monthlyClustering} machine={machine} />}
           {tab === "angle" && <AngleGuide angleDate={angleDate} setAngleDate={setAngleDate} angleGrid={angleGrid} />}
@@ -698,7 +725,7 @@ function PredictionSnapshot({ prediction, backtest, nextEntry, machine }) {
   );
 }
 
-function PredictionLab({ prediction, backtest, nextEntry, machine }) {
+function PredictionLab({ prediction, backtest, nextEntry, machine, onRunBacktest }) {
   const weightEntries = prediction?.config?.weights
     ? Object.entries(prediction.config.weights).sort((a, b) => b[1] - a[1])
     : [];
@@ -802,6 +829,16 @@ function PredictionLab({ prediction, backtest, nextEntry, machine }) {
           </div>
 
           <SectionTitle style={{ marginTop: 30 }}>Walk-forward validation</SectionTitle>
+          <p style={{ fontSize: 12.5, color: "#8b9aa7", marginTop: 6, maxWidth: 820, lineHeight: 1.5 }}>
+            This re-scores the full candidate space across a large slice of history and can take a little while.
+            It only runs when you ask it to, and re-running after switching machine views needs a fresh click too.
+          </p>
+          {!backtest && (
+            <button onClick={onRunBacktest} className="mono"
+              style={{ marginTop: 10, padding: "10px 18px", background: "#1f9d77", color: "#0d131a", border: "none", borderRadius: 6, fontSize: 12.5, fontWeight: 800, letterSpacing: ".04em", cursor: "pointer" }}>
+              RUN BACKTEST
+            </button>
+          )}
           {backtest && <>
             <p style={{ fontSize: 13, color: "#8b9aa7", marginTop: 6, maxWidth: 820, lineHeight: 1.5 }}>
               Every historical test point uses only information available before that draw. Model weights are periodically re-learned from earlier observations, then frozen for the following block of draws to reduce look-ahead bias.
