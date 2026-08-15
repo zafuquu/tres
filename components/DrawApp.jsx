@@ -322,7 +322,15 @@ export default function SwertresLedger() {
     }).sort((a, b) => (a.month < b.month ? -1 : 1));
   }, [records]);
 
-  const mostRecent = useMemo(() => (records && records.length ? records[records.length - 1] : null), [records]);
+  const mostRecent = useMemo(() => {
+    if (!records) return null;
+    const complete = (s) => Array.isArray(s) && s.length === 3 && s.every((d) => d !== "" && d !== undefined && d !== null);
+    // Only ever show a fully-completed day here — a day with only 2PM
+    // entered so far would otherwise crash this grid (it expects three
+    // full rows of three digits, not a partially-filled day).
+    const completeDays = records.filter((r) => complete(r.slot1) && complete(r.slot2) && complete(r.slot3));
+    return completeDays.length ? completeDays[completeDays.length - 1] : null;
+  }, [records]);
 
   const angleGrid = useMemo(() => {
     if (!angleDate) return null;
