@@ -54,15 +54,25 @@ async function main() {
   let inserted = 0;
   for (const row of all) {
     const [date, s1p1, s1p2, s1p3, s2p1, s2p2, s2p3, s3p1, s3p2, s3p3] = row;
+    // DO UPDATE (not DO NOTHING) so corrections/additions to the bundled
+    // JSON files actually land when you re-run this after editing them.
+    // The WHERE clause still protects real usage of the app: a row you or
+    // someone else entered manually, or that got pulled from the live sync
+    // API, is never clobbered by the bulk historical file — only rows this
+    // same seed script previously wrote (source = 'historical') get updated.
     const { rowCount } = await pool.query(
       `INSERT INTO draws (draw_date, slot1_p1, slot1_p2, slot1_p3, slot2_p1, slot2_p2, slot2_p3, slot3_p1, slot3_p2, slot3_p3, source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'historical')
-       ON CONFLICT (draw_date) DO NOTHING;`,
+       ON CONFLICT (draw_date) DO UPDATE SET
+         slot1_p1 = EXCLUDED.slot1_p1, slot1_p2 = EXCLUDED.slot1_p2, slot1_p3 = EXCLUDED.slot1_p3,
+         slot2_p1 = EXCLUDED.slot2_p1, slot2_p2 = EXCLUDED.slot2_p2, slot2_p3 = EXCLUDED.slot2_p3,
+         slot3_p1 = EXCLUDED.slot3_p1, slot3_p2 = EXCLUDED.slot3_p2, slot3_p3 = EXCLUDED.slot3_p3
+       WHERE draws.source = 'historical';`,
       [date, s1p1, s1p2, s1p3, s2p1, s2p2, s2p3, s3p1, s3p2, s3p3]
     );
     inserted += rowCount;
   }
-  console.log(`Done. Inserted ${inserted} new rows (skipped any dates already present).`);
+  console.log(`Done. Inserted/updated ${inserted} rows (left manual/api entries untouched).`);
   await pool.end();
   process.exit(0);
 }
