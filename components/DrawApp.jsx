@@ -1110,7 +1110,12 @@ function AllEntries({ records, deleteRecord }) {
   );
 }
 
-const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function daysInMonth(year, monthIndex) {
+  // monthIndex is 0-11
+  return new Date(Number(year), monthIndex + 1, 0).getDate();
+}
 
 function SpreadsheetView({ records }) {
   const complete = (slot) => Array.isArray(slot) && slot.length === 3 && slot.every((d) => d !== "" && d !== undefined && d !== null);
@@ -1125,26 +1130,63 @@ function SpreadsheetView({ records }) {
     if (years.length && !years.includes(year)) setYear(years[years.length - 1]);
   }, [years]); // eslint-disable-line
 
-  const byMonth = useMemo(() => {
-    const map = {};
-    records
-      .filter((r) => r.date.startsWith(year))
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .forEach((r) => {
-        const m = Number(r.date.slice(5, 7)) - 1;
-        map[m] = map[m] || [];
-        map[m].push(r);
-      });
+  // date -> record, for O(1) lookup while building the grid
+  const byDate = useMemo(() => {
+    const map = new Map();
+    records.forEach((r) => map.set(r.date, r));
     return map;
-  }, [records, year]);
+  }, [records]);
 
-  const monthKeys = Object.keys(byMonth).map(Number).sort((a, b) => a - b);
+  const maxDays = 31;
+
+  function cellFor(monthIndex, day) {
+    const dim = daysInMonth(year, monthIndex);
+    if (day > dim) return null; // this date doesn't exist (e.g. Feb 30) — render as a blocked-out cell
+    const dateStr = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const r = byDate.get(dateStr);
+    return {
+      dateStr,
+      slot1: r && complete(r.slot1) ? r.slot1.join("") : "",
+      slot2: r && complete(r.slot2) ? r.slot2.join("") : "",
+      slot3: r && complete(r.slot3) ? r.slot3.join("") : "",
+    };
+  }
+
+  const cellStyle = {
+    border: "1px solid #22303b",
+    width: 34,
+    height: 26,
+    textAlign: "center",
+    fontSize: 11.5,
+  };
+  const blockedStyle = { ...cellStyle, background: "#0a0f14" };
+  const dayCellStyle = { ...cellStyle, width: 28, background: "#111a23", color: "#8b9aa7", fontWeight: 700 };
+  const monthHeaderStyle = {
+    border: "1px solid #22303b",
+    background: "#111a23",
+    color: "#edf3f7",
+    fontWeight: 800,
+    textAlign: "center",
+    fontSize: 12,
+    letterSpacing: "0.06em",
+    padding: "4px 0",
+  };
+  const subHeaderStyle = {
+    border: "1px solid #22303b",
+    background: "#0d131a",
+    color: "#8b9aa7",
+    fontWeight: 700,
+    textAlign: "center",
+    fontSize: 10,
+    letterSpacing: "0.04em",
+  };
 
   return (
     <div className="sans">
       <SectionTitle>Spreadsheet view</SectionTitle>
       <p style={{ fontSize: 13, color: "#8b9aa7", marginTop: 6, marginBottom: 16, maxWidth: 640 }}>
-        Same shape as the original workbook — one page per year, days down the rows, draw times across the columns.
+        Same layout as the original workbook — one page per year, months side by side, days down the rows.
+        Scroll sideways to see every month.
       </p>
       <div className="machine-bar" style={{ overflowX: "auto", flexWrap: "nowrap" }}>
         {years.map((y) => (
@@ -1154,43 +1196,56 @@ function SpreadsheetView({ records }) {
         ))}
       </div>
 
-      {monthKeys.length === 0 ? (
-        <div style={{ marginTop: 24, color: "#8b9aa7", fontSize: 13 }}>No draws logged for {year} yet.</div>
-      ) : (
-        monthKeys.map((m) => (
-          <div key={m} style={{ marginTop: 26 }}>
-            <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: "#edf3f7", letterSpacing: "0.06em", marginBottom: 8 }}>
-              {MONTH_NAMES[m].toUpperCase()} {year}
-            </div>
-            <table className="datatable mono" style={{ fontSize: 12.5 }}>
-              <thead>
-                <tr style={{ background: "#111a23" }}>
-                  <th style={{ textAlign: "left" }}>Date</th>
-                  <th>Day</th>
-                  <th>2PM</th>
-                  <th>5PM</th>
-                  <th>9PM</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byMonth[m].map((r) => {
-                  const d = new Date(`${r.date}T12:00:00`);
-                  const wd = d.toLocaleDateString("en-US", { weekday: "short" });
+      <div style={{ marginTop: 20, overflowX: "auto" }}>
+        <table className="mono" style={{ borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={{ ...monthHeaderStyle, background: "transparent", border: "none" }}></th>
+              {MONTH_NAMES.map((mName) => (
+                <th key={mName} colSpan={3} style={monthHeaderStyle}>
+                  {mName} {year}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              <th style={{ ...subHeaderStyle, background: "transparent", border: "none" }}></th>
+              {MONTH_NAMES.map((mName) => (
+                <React.Fragment key={mName}>
+                  <th style={subHeaderStyle}>2PM</th>
+                  <th style={subHeaderStyle}>5PM</th>
+                  <th style={subHeaderStyle}>9PM</th>
+                </React.Fragment>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: maxDays }, (_, i) => i + 1).map((day) => (
+              <tr key={day}>
+                <td style={dayCellStyle}>{day}</td>
+                {MONTH_NAMES.map((_, monthIndex) => {
+                  const cell = cellFor(monthIndex, day);
+                  if (!cell) {
+                    return (
+                      <React.Fragment key={monthIndex}>
+                        <td style={blockedStyle} />
+                        <td style={blockedStyle} />
+                        <td style={blockedStyle} />
+                      </React.Fragment>
+                    );
+                  }
                   return (
-                    <tr key={r.date}>
-                      <td>{r.date}</td>
-                      <td style={{ textAlign: "center" }}>{wd}</td>
-                      <td style={{ textAlign: "center" }}>{complete(r.slot1) ? r.slot1.join("") : "—"}</td>
-                      <td style={{ textAlign: "center" }}>{complete(r.slot2) ? r.slot2.join("") : "—"}</td>
-                      <td style={{ textAlign: "center" }}>{complete(r.slot3) ? r.slot3.join("") : "—"}</td>
-                    </tr>
+                    <React.Fragment key={monthIndex}>
+                      <td style={cellStyle}>{cell.slot1}</td>
+                      <td style={cellStyle}>{cell.slot2}</td>
+                      <td style={cellStyle}>{cell.slot3}</td>
+                    </React.Fragment>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        ))
-      )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
