@@ -15,11 +15,23 @@ import { dirname, join } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const connectionString = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
-if (!connectionString) {
+const rawConnectionString = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
+if (!rawConnectionString) {
   console.error("Set POSTGRES_URL (or POSTGRES_URL_NON_POOLING) in .env.local first.");
   process.exit(1);
 }
+function cleanConnectionString(connStr) {
+  try {
+    const u = new URL(connStr);
+    u.searchParams.delete("sslmode");
+    u.searchParams.delete("supa");
+    u.searchParams.delete("pgbouncer");
+    return u.toString();
+  } catch {
+    return connStr;
+  }
+}
+const connectionString = cleanConnectionString(rawConnectionString);
 const pool = new Pool({ connectionString, ssl: { rejectUnauthorized: false } });
 
 async function main() {
