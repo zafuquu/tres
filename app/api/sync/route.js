@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sql, ensureSchema } from "../../../lib/db";
+import { query, ensureSchema } from "../../../lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +68,7 @@ export async function POST() {
   try {
     await ensureSchema();
 
-    const { rows } = await sql`SELECT MAX(draw_date) AS latest FROM draws;`;
+    const { rows } = await query("SELECT MAX(draw_date) AS latest FROM draws;");
     const latest = rows[0]?.latest;
     const sinceDate = latest
       ? new Date(new Date(latest).getTime() + 86400000).toISOString().slice(0, 10)
@@ -88,15 +88,16 @@ export async function POST() {
     const incomplete = [];
     for (const [date, slots] of Object.entries(found)) {
       if (slots.slot1 && slots.slot2 && slots.slot3) {
-        await sql`
-          INSERT INTO draws (draw_date, slot1_p1, slot1_p2, slot1_p3, slot2_p1, slot2_p2, slot2_p3, slot3_p1, slot3_p2, slot3_p3, source)
-          VALUES (${date}, ${slots.slot1[0]}, ${slots.slot1[1]}, ${slots.slot1[2]}, ${slots.slot2[0]}, ${slots.slot2[1]}, ${slots.slot2[2]}, ${slots.slot3[0]}, ${slots.slot3[1]}, ${slots.slot3[2]}, 'api')
-          ON CONFLICT (draw_date) DO UPDATE SET
-            slot1_p1 = EXCLUDED.slot1_p1, slot1_p2 = EXCLUDED.slot1_p2, slot1_p3 = EXCLUDED.slot1_p3,
-            slot2_p1 = EXCLUDED.slot2_p1, slot2_p2 = EXCLUDED.slot2_p2, slot2_p3 = EXCLUDED.slot2_p3,
-            slot3_p1 = EXCLUDED.slot3_p1, slot3_p2 = EXCLUDED.slot3_p2, slot3_p3 = EXCLUDED.slot3_p3,
-            source = 'api';
-        `;
+        await query(
+          `INSERT INTO draws (draw_date, slot1_p1, slot1_p2, slot1_p3, slot2_p1, slot2_p2, slot2_p3, slot3_p1, slot3_p2, slot3_p3, source)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'api')
+           ON CONFLICT (draw_date) DO UPDATE SET
+             slot1_p1 = EXCLUDED.slot1_p1, slot1_p2 = EXCLUDED.slot1_p2, slot1_p3 = EXCLUDED.slot1_p3,
+             slot2_p1 = EXCLUDED.slot2_p1, slot2_p2 = EXCLUDED.slot2_p2, slot2_p3 = EXCLUDED.slot2_p3,
+             slot3_p1 = EXCLUDED.slot3_p1, slot3_p2 = EXCLUDED.slot3_p2, slot3_p3 = EXCLUDED.slot3_p3,
+             source = 'api';`,
+          [date, slots.slot1[0], slots.slot1[1], slots.slot1[2], slots.slot2[0], slots.slot2[1], slots.slot2[2], slots.slot3[0], slots.slot3[1], slots.slot3[2]]
+        );
         added++;
       } else {
         incomplete.push(date);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sql, ensureSchema } from "../../../../lib/db";
+import { query, ensureSchema } from "../../../../lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ error: "date must be YYYY-MM-DD" }, { status: 400, headers: CORS_HEADERS });
     }
     await ensureSchema();
-    await sql`DELETE FROM draws WHERE draw_date = ${date};`;
+    await query("DELETE FROM draws WHERE draw_date = $1;", [date]);
     return NextResponse.json({ ok: true }, { headers: CORS_HEADERS });
   } catch (err) {
     return NextResponse.json({ error: String(err?.message || err) }, { status: 500, headers: CORS_HEADERS });
