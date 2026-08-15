@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from "recharts";
-import { Plus, Trash2, Grid3x3, TrendingUp, BookOpen, Table2, Stamp, AlertCircle, History, Cpu, Layers } from "lucide-react";
+import { Plus, Trash2, Grid3x3, TrendingUp, BookOpen, Table2, Stamp, AlertCircle, History, Cpu, Layers, LayoutGrid } from "lucide-react";
 import { storage, mergeRecords } from "../lib/clientStorage";
 import { buildPrediction, getNextPredictionTarget, runWalkForwardBacktest, formatPercent, formatProbability, MODEL_VERSION, FEATURE_LABELS } from "../lib/predictionEngine";
 
@@ -281,7 +281,10 @@ export default function SwertresLedger() {
 
   const [predictionTabVisited, setPredictionTabVisited] = useState(false);
   useEffect(() => {
-    if (tab === "prediction" || tab === "dashboard") setPredictionTabVisited(true);
+    // "log" included so the ghost-number hint on the entry form has
+    // something to show — this is one cheap buildPrediction() call, not
+    // the expensive backtest, so it's fine to compute eagerly here.
+    if (tab === "prediction" || tab === "dashboard" || tab === "log") setPredictionTabVisited(true);
   }, [tab]);
 
   const nextPrediction = useMemo(() => {
@@ -578,6 +581,7 @@ export default function SwertresLedger() {
               { id: "patterns", label: "Pattern Lab", icon: Grid3x3 },
               { id: "angle", label: "Angle Guide", icon: BookOpen },
               { id: "entries", label: "Draw History", icon: Table2 },
+              { id: "sheet", label: "Spreadsheet", icon: LayoutGrid },
             ].map((t) => {
               const Icon = t.icon;
               const active = tab === t.id;
@@ -615,10 +619,11 @@ export default function SwertresLedger() {
         <section className="workspace-content">
           {tab === "dashboard" && <Dashboard freqStats={freqStats} n={records.length} leadingCombo={leadingCombo} dateRange={[records[0]?.date, records[records.length - 1]?.date]} machine={machine} nextPrediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} />}
           {tab === "prediction" && <PredictionLab prediction={nextPrediction} backtest={backtest} nextEntry={predictionEntry} machine={machine} onRunBacktest={() => setBacktestRequested(true)} />}
-          {tab === "log" && <LogDraw form={form} updateDigit={updateDigit} addRecord={addRecord} saveMsg={saveMsg} records={allRecords} deleteRecord={deleteRecord} loadError={loadError} nextEntry={nextEntry} />}
+          {tab === "log" && <LogDraw form={form} updateDigit={updateDigit} addRecord={addRecord} saveMsg={saveMsg} records={allRecords} deleteRecord={deleteRecord} loadError={loadError} nextEntry={nextEntry} ghostPrediction={nextPrediction} />}
           {tab === "patterns" && <Patterns mostRecent={mostRecent} monthlyClustering={monthlyClustering} machine={machine} />}
           {tab === "angle" && <AngleGuide angleDate={angleDate} setAngleDate={setAngleDate} angleGrid={angleGrid} />}
           {tab === "entries" && <AllEntries records={records} deleteRecord={deleteRecord} />}
+          {tab === "sheet" && <SpreadsheetView records={records} />}
         </section>
       </main>
     </div>
@@ -912,10 +917,13 @@ function SectionTitle({ children, style }) {
   return <h2 className="section-title" style={style}>{children}</h2>;
 }
 
-function LogDraw({ form, updateDigit, addRecord, saveMsg, records, deleteRecord, loadError, nextEntry }) {
+function LogDraw({ form, updateDigit, addRecord, saveMsg, records, deleteRecord, loadError, nextEntry, ghostPrediction }) {
   const recent = [...records].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
   const label = nextEntry.label;
   const complete = (slot) => Array.isArray(slot) && slot.length === 3 && slot.every((d) => d !== "" && d !== undefined && d !== null);
+  const ghostDigits = ghostPrediction?.ready && ghostPrediction?.candidates?.[0]?.candidate
+    ? ghostPrediction.candidates[0].candidate.split("")
+    : null;
   return (
     <div className="sans" style={{ display: "grid", gridTemplateColumns: "minmax(280px,380px) 1fr", gap: 28 }}>
       <div>
@@ -935,9 +943,16 @@ function LogDraw({ form, updateDigit, addRecord, saveMsg, records, deleteRecord,
             {form.digits.map((v, i) => (
               <input key={i} type="text" inputMode="numeric" maxLength={1} autoComplete="off" className="mono digit" value={v}
                 onChange={(e) => updateDigit(i, e.target.value)}
+                placeholder={ghostDigits ? String(ghostDigits[i]) : ""}
                 style={{ width: 56, height: 56, fontSize: 22, fontWeight: 700, border: "1px solid #22303b", borderRadius: 4 }} />
             ))}
           </div>
+          {ghostDigits && (
+            <div style={{ marginTop: 8, fontSize: 11.5, color: "#5c6b76", lineHeight: 1.5, maxWidth: 340 }}>
+              Faded digits are the model's current top guess for {label} ({ghostDigits.join("")}) — a preview, not
+              a validated prediction. It has performed at chance level in backtesting; see Prediction Lab.
+            </div>
+          )}
         </div>
         <button onClick={addRecord} className="mono" style={{ marginTop: 20, width: "100%", padding: "12px 0", background: "#edf3f7", color: "#0d131a", border: "none", borderRadius: 5, fontSize: 13.5, fontWeight: 800, letterSpacing: "0.04em", cursor: "pointer" }}>
           SAVE {label} RESULT
@@ -1091,6 +1106,91 @@ function AllEntries({ records, deleteRecord }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function SpreadsheetView({ records }) {
+  const complete = (slot) => Array.isArray(slot) && slot.length === 3 && slot.every((d) => d !== "" && d !== undefined && d !== null);
+
+  const years = useMemo(() => {
+    const set = new Set(records.map((r) => r.date.slice(0, 4)));
+    return [...set].sort();
+  }, [records]);
+
+  const [year, setYear] = useState(() => years[years.length - 1] || String(new Date().getFullYear()));
+  useEffect(() => {
+    if (years.length && !years.includes(year)) setYear(years[years.length - 1]);
+  }, [years]); // eslint-disable-line
+
+  const byMonth = useMemo(() => {
+    const map = {};
+    records
+      .filter((r) => r.date.startsWith(year))
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .forEach((r) => {
+        const m = Number(r.date.slice(5, 7)) - 1;
+        map[m] = map[m] || [];
+        map[m].push(r);
+      });
+    return map;
+  }, [records, year]);
+
+  const monthKeys = Object.keys(byMonth).map(Number).sort((a, b) => a - b);
+
+  return (
+    <div className="sans">
+      <SectionTitle>Spreadsheet view</SectionTitle>
+      <p style={{ fontSize: 13, color: "#8b9aa7", marginTop: 6, marginBottom: 16, maxWidth: 640 }}>
+        Same shape as the original workbook — one page per year, days down the rows, draw times across the columns.
+      </p>
+      <div className="machine-bar" style={{ overflowX: "auto", flexWrap: "nowrap" }}>
+        {years.map((y) => (
+          <button key={y} className={`machine-btn ${year === y ? "active" : ""}`} onClick={() => setYear(y)}>
+            {y}
+          </button>
+        ))}
+      </div>
+
+      {monthKeys.length === 0 ? (
+        <div style={{ marginTop: 24, color: "#8b9aa7", fontSize: 13 }}>No draws logged for {year} yet.</div>
+      ) : (
+        monthKeys.map((m) => (
+          <div key={m} style={{ marginTop: 26 }}>
+            <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: "#edf3f7", letterSpacing: "0.06em", marginBottom: 8 }}>
+              {MONTH_NAMES[m].toUpperCase()} {year}
+            </div>
+            <table className="datatable mono" style={{ fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: "#111a23" }}>
+                  <th style={{ textAlign: "left" }}>Date</th>
+                  <th>Day</th>
+                  <th>2PM</th>
+                  <th>5PM</th>
+                  <th>9PM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byMonth[m].map((r) => {
+                  const d = new Date(`${r.date}T12:00:00`);
+                  const wd = d.toLocaleDateString("en-US", { weekday: "short" });
+                  return (
+                    <tr key={r.date}>
+                      <td>{r.date}</td>
+                      <td style={{ textAlign: "center" }}>{wd}</td>
+                      <td style={{ textAlign: "center" }}>{complete(r.slot1) ? r.slot1.join("") : "—"}</td>
+                      <td style={{ textAlign: "center" }}>{complete(r.slot2) ? r.slot2.join("") : "—"}</td>
+                      <td style={{ textAlign: "center" }}>{complete(r.slot3) ? r.slot3.join("") : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))
+      )}
     </div>
   );
 }
