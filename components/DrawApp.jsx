@@ -271,7 +271,14 @@ export default function SwertresLedger() {
   // "Prediction Lab", and only against a capped, most-recent slice of history
   // (still statistically meaningful, but bounded so it can't hang for a minute
   // on the Old/Combined views, which have 10,000+ individual draws).
-  const BACKTEST_MAX_EVENTS_RECORDS = 900; // ~2,700 individual draws, capped for responsiveness
+  // This cap used to matter a lot more: earlier, the backtest ran
+  // automatically on every load/machine-switch, so keeping it small was a
+  // genuine performance requirement. It's now opt-in (the "Run Backtest"
+  // button), so the real safety mechanism is the click itself, not this
+  // number. Raised to comfortably cover the full current-machine dataset
+  // (1,130 records as of Aug 2026) with headroom to grow, while still
+  // capping worst-case runtime if the Old/Combined views are ever used.
+  const BACKTEST_MAX_EVENTS_RECORDS = 2000;
 
   const predictionRecords = useMemo(() => {
     if (!records) return records;
@@ -527,6 +534,28 @@ export default function SwertresLedger() {
         .loading-title { color:var(--text); font:800 11px monospace; letter-spacing:.12em; }
         .loading-sub { margin-top:5px; font-size:11px; color:var(--dim); }
 
+        /* Layouts that need to reflow on narrow screens instead of forcing
+           horizontal overflow of the whole page — these previously used
+           fixed inline grid-template-columns, which media queries can't
+           override at all. */
+        .prediction-snapshot-grid { display:grid; grid-template-columns: minmax(0,1fr) 260px; gap:14px; }
+        .prediction-row { display:grid; grid-template-columns: 28px 86px minmax(0,1fr) 92px; gap:10px; }
+        .model-state-grid { display:grid; grid-template-columns: minmax(0,1.3fr) minmax(0,.7fr); gap:12px; }
+        .log-draw-grid { display:grid; grid-template-columns: minmax(0,380px) minmax(0,1fr); gap:28px; }
+        .position-odds-grid { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:16px; }
+
+        @media (max-width: 900px) {
+          .log-draw-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+          .prediction-snapshot-grid { grid-template-columns: 1fr; }
+          .model-state-grid { grid-template-columns: 1fr; }
+          .position-odds-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 420px) {
+          .prediction-row { grid-template-columns: 22px 62px minmax(0,1fr) 62px; gap:6px; font-size:12px; }
+        }
+
         @media (max-width: 720px) {
           .top-inner, .nav, .workspace { padding-left:16px; padding-right:16px; }
           .brand-sub { display:none; }
@@ -735,10 +764,10 @@ function PredictionSnapshot({ prediction, backtest, nextEntry, machine }) {
           Building the model needs at least 45 prior draws for this timeframe. Current training observations: {prediction?.trainingEvents || 0}.
         </div>
       ) : (
-        <div className="prediction-snapshot-grid" style={{ marginTop: 16, display: "grid", gridTemplateColumns: "minmax(0,1fr) 260px", gap: 14 }}>
+        <div className="prediction-snapshot-grid" style={{ marginTop: 16 }}>
           <div style={{ display: "grid", gap: 7 }}>
             {top.map((item, i) => (
-              <div key={item.candidate} className="prediction-row" style={{ display: "grid", gridTemplateColumns: "28px 86px minmax(0,1fr) 92px", gap: 10, alignItems: "center", padding: "9px 10px", border: "1px solid #22303b", borderRadius: 7, background: i === 0 ? "rgba(56,214,160,.07)" : "#0d131a" }}>
+              <div key={item.candidate} className="prediction-row" style={{ alignItems: "center", padding: "9px 10px", border: "1px solid #22303b", borderRadius: 7, background: i === 0 ? "rgba(56,214,160,.07)" : "#0d131a" }}>
                 <span className="mono" style={{ color: i === 0 ? "#38d6a0" : "#5f6d78", fontSize: 11 }}>#{i + 1}</span>
                 <strong className="mono" style={{ fontSize: 21, letterSpacing: ".08em" }}>{item.candidate}</strong>
                 <span style={{ fontSize: 11.5, color: "#9baab5" }}>{item.reasons.join(" + ")}</span>
@@ -793,7 +822,7 @@ function PredictionLab({ prediction, backtest, nextEntry, machine, onRunBacktest
 
       {prediction?.ready ? (
         <>
-          <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "minmax(0,1.3fr) minmax(280px,.7fr)", gap: 12 }}>
+          <div className="model-state-grid" style={{ marginTop: 18 }}>
             <div style={{ border: "1px solid #2d3d49", borderRadius: 9, padding: 15, background: "linear-gradient(145deg,#0d171a,#0c1218)" }}>
               <div className="mono" style={{ fontSize: 10, color: "#8b9aa7", letterSpacing: ".1em" }}>CURRENT MODEL STATE</div>
               <div style={{ display: "flex", alignItems: "end", gap: 18, marginTop: 10, flexWrap: "wrap" }}>
@@ -927,7 +956,7 @@ function LogDraw({ form, updateDigit, addRecord, saveMsg, records, deleteRecord,
     ? ghostPrediction.candidates[0].candidate.split("")
     : null;
   return (
-    <div className="sans" style={{ display: "grid", gridTemplateColumns: "minmax(280px,380px) 1fr", gap: 28 }}>
+    <div className="sans log-draw-grid">
       <div>
         <SectionTitle>Record next draw</SectionTitle>
         {loadError && <div style={{ fontSize: 12.5, color: "#f1b85b", margin: "8px 0" }}>{loadError}</div>}
@@ -1300,7 +1329,7 @@ function PositionOdds({ freqStats }) {
         return (
           <div key={g.key} style={{ marginTop: 26 }}>
             <div className="mono" style={{ fontSize: 13, fontWeight: 800, color: "#edf3f7", marginBottom: 10 }}>{g.label}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(160px,1fr))", gap: 16 }}>
+            <div className="position-odds-grid">
               {stats.map((stat, colIdx) => {
                 const ranked = rankedDigits(stat);
                 return (
