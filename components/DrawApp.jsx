@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from "recharts";
-import { Plus, Trash2, Grid3x3, TrendingUp, BookOpen, Table2, Stamp, AlertCircle, History, Cpu, Layers, LayoutGrid } from "lucide-react";
+import { Plus, Trash2, Grid3x3, TrendingUp, BookOpen, Table2, Stamp, AlertCircle, History, Cpu, Layers, LayoutGrid, Columns3 } from "lucide-react";
 import { storage, mergeRecords } from "../lib/clientStorage";
 import { buildPrediction, getNextPredictionTarget, runWalkForwardBacktest, formatPercent, formatProbability, MODEL_VERSION, FEATURE_LABELS } from "../lib/predictionEngine";
 
@@ -582,6 +582,7 @@ export default function SwertresLedger() {
               { id: "angle", label: "Angle Guide", icon: BookOpen },
               { id: "entries", label: "Draw History", icon: Table2 },
               { id: "sheet", label: "Spreadsheet", icon: LayoutGrid },
+              { id: "position", label: "Position Odds", icon: Columns3 },
             ].map((t) => {
               const Icon = t.icon;
               const active = tab === t.id;
@@ -624,6 +625,7 @@ export default function SwertresLedger() {
           {tab === "angle" && <AngleGuide angleDate={angleDate} setAngleDate={setAngleDate} angleGrid={angleGrid} />}
           {tab === "entries" && <AllEntries records={records} deleteRecord={deleteRecord} />}
           {tab === "sheet" && <SpreadsheetView records={records} />}
+          {tab === "position" && <PositionOdds freqStats={freqStats} />}
         </section>
       </main>
     </div>
@@ -1246,6 +1248,90 @@ function SpreadsheetView({ records }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function PositionOdds({ freqStats }) {
+  const [topK, setTopK] = useState(3);
+  const groups = [
+    { label: "2PM", key: "slot1" },
+    { label: "5PM", key: "slot2" },
+    { label: "9PM", key: "slot3" },
+  ];
+
+  function rankedDigits(stat) {
+    const n = stat.n || 0;
+    return Array.from({ length: 10 }, (_, d) => ({ digit: d, count: stat.counts[d], rate: n ? stat.counts[d] / n : 0 }))
+      .sort((a, b) => b.rate - a.rate);
+  }
+
+  const coverage = (topK * topK * topK) / 1000;
+
+  return (
+    <div className="sans">
+      <SectionTitle>Position Odds</SectionTitle>
+      <p style={{ fontSize: 13, color: "#8b9aa7", marginTop: 6, maxWidth: 720, lineHeight: 1.5 }}>
+        Every digit's current rate at each position, ranked. Pick how many top digits per position to keep, and
+        see exactly how many 3-digit combinations that set covers.
+      </p>
+      <div className="stamp" style={{ color: "#f1b85b", marginTop: 12 }}>
+        <AlertCircle size={13} /> NARROWING THE LIST ≠ NARROWING THE ODDS
+      </div>
+      <p style={{ fontSize: 12.5, color: "#8b9aa7", marginTop: 8, maxWidth: 720, lineHeight: 1.6 }}>
+        Picking the top 3 digits per position gives you 27 combinations instead of 1,000 — a real reduction in
+        how many bets you'd need to cover every one of your picks. But that is not the same as those 27 being
+        more likely to contain the actual result: this project's own position-match testing found no method's
+        top digits landed correct more often than chance predicts. A narrower list is easier to bet, not a
+        better bet.
+      </p>
+
+      <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 10 }}>
+        <label className="mono" style={{ fontSize: 11, color: "#8b9aa7" }}>TOP DIGITS PER POSITION</label>
+        <input type="range" min={1} max={10} value={topK} onChange={(e) => setTopK(Number(e.target.value))} style={{ width: 160 }} />
+        <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{topK}</span>
+        <span className="mono" style={{ fontSize: 12, color: "#8b9aa7" }}>
+          → {topK ** 3} of 1,000 combinations ({(coverage * 100).toFixed(1)}% of the space) per draw time
+        </span>
+      </div>
+
+      {groups.map((g) => {
+        const stats = freqStats.filter((f) => f.key === g.key).sort((a, b) => a.idx - b.idx);
+        return (
+          <div key={g.key} style={{ marginTop: 26 }}>
+            <div className="mono" style={{ fontSize: 13, fontWeight: 800, color: "#edf3f7", marginBottom: 10 }}>{g.label}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(160px,1fr))", gap: 16 }}>
+              {stats.map((stat, colIdx) => {
+                const ranked = rankedDigits(stat);
+                return (
+                  <div key={colIdx} style={{ border: "1px solid #22303b", borderRadius: 6, padding: 12, background: "#0d131a" }}>
+                    <div className="mono" style={{ fontSize: 10.5, color: "#8b9aa7", marginBottom: 8, letterSpacing: "0.06em" }}>
+                      POSITION {colIdx + 1}
+                    </div>
+                    {ranked.map((r, i) => (
+                      <div key={r.digit} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <div className="mono" style={{
+                          width: 20, fontSize: 12.5, fontWeight: 700,
+                          color: i < topK ? "#1f9d77" : "#5c6b76",
+                        }}>{r.digit}</div>
+                        <div style={{ flex: 1, height: 8, background: "#111a23", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{
+                            width: `${Math.min(100, r.rate * 100 * 4)}%`, height: "100%",
+                            background: i < topK ? "#1f9d77" : "#2b3945",
+                          }} />
+                        </div>
+                        <div className="mono" style={{ width: 42, fontSize: 11, color: "#8b9aa7", textAlign: "right" }}>
+                          {(r.rate * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
