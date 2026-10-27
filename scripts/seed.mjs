@@ -3,7 +3,7 @@
 //
 //   npm run seed
 //
-// Loads the 3,905 historical draws (old + current machine) bundled
+// Loads all validated historical rows (old + current machine) bundled
 // in data/old_machine.json and data/new_machine.json into the
 // database. Safe to re-run — uses ON CONFLICT DO NOTHING, so it
 // won't overwrite anything you've already added manually or synced.
@@ -38,12 +38,21 @@ async function main() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS draws (
       draw_date DATE PRIMARY KEY,
-      slot1_p1 SMALLINT NOT NULL, slot1_p2 SMALLINT NOT NULL, slot1_p3 SMALLINT NOT NULL,
-      slot2_p1 SMALLINT NOT NULL, slot2_p2 SMALLINT NOT NULL, slot2_p3 SMALLINT NOT NULL,
-      slot3_p1 SMALLINT NOT NULL, slot3_p2 SMALLINT NOT NULL, slot3_p3 SMALLINT NOT NULL,
+      slot1_p1 SMALLINT, slot1_p2 SMALLINT, slot1_p3 SMALLINT,
+      slot2_p1 SMALLINT, slot2_p2 SMALLINT, slot2_p3 SMALLINT,
+      slot3_p1 SMALLINT, slot3_p2 SMALLINT, slot3_p3 SMALLINT,
       source TEXT NOT NULL DEFAULT 'manual',
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+  `);
+  // Older databases may have been created with NOT NULL constraints on every
+  // digit column. Drop those constraints so a date can safely store one or two
+  // published draws while the remaining slot(s) await verified results.
+  await pool.query(`
+    ALTER TABLE draws
+      ALTER COLUMN slot1_p1 DROP NOT NULL, ALTER COLUMN slot1_p2 DROP NOT NULL, ALTER COLUMN slot1_p3 DROP NOT NULL,
+      ALTER COLUMN slot2_p1 DROP NOT NULL, ALTER COLUMN slot2_p2 DROP NOT NULL, ALTER COLUMN slot2_p3 DROP NOT NULL,
+      ALTER COLUMN slot3_p1 DROP NOT NULL, ALTER COLUMN slot3_p2 DROP NOT NULL, ALTER COLUMN slot3_p3 DROP NOT NULL;
   `);
 
   const oldRows = JSON.parse(readFileSync(join(__dirname, "../data/old_machine.json"), "utf8"));

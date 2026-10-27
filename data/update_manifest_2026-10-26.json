@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "snapshot_date": "2026-10-27",
+  "updated_through": "2026-10-26",
+  "target_file": "data/new_machine.json",
+  "start_date_added": "2026-08-16",
+  "end_date_added": "2026-10-26",
+  "added_full_day_records": 72,
+  "dataset_rows_after_update": 1202,
+  "storage_format": "Each result is represented as three separate digit integers; leading zeros remain preserved.",
+  "provenance": {
+    "classification": "independently compiled public result archive; not an official PCSO database",
+    "archive_source": "LottoBot 3D Lotto public archive",
+    "source_urls": [
+      "https://www.gmanetwork.com/news/lotto/results-august-16-2026/",
+      "https://www.gmanetwork.com/news/lotto/results-september-05-2026/",
+      "https://www.gmanetwork.com/news/lotto/results-october-26-2026/",
+      "https://swertengtao.com/3d/2026/",
+      "https://bpspin.com/swertres-result/",
+      "https://lotto.works/en/results/3d-lotto/"
+    ],
+    "cross_checks": [
+      {
+        "period": "2026-09-06 through 2026-10-26",
+        "slot": "2 PM",
+        "method": "All 51 rows matched the user-provided results."
+      },
+      {
+        "period": "2026-09-06 through 2026-10-26",
+        "slot": "5 PM",
+        "method": "All 51 rows matched the user-provided results."
+      },
+      {
+        "period": "2026-09-06 through 2026-10-18",
+        "slot": "9 PM",
+        "method": "All 43 rows matched the user-provided results."
+      },
+      {
+        "date": "2026-10-26",
+        "all_slots": [
+          "158",
+          "987",
+          "978"
+        ],
+        "source_urls": [
+          "https://www.gmanetwork.com/news/lotto/results-october-26-2026/",
+          "https://lotto.works/en/results/3d-lotto/"
+        ]
+      }
+    ],
+    "limitations": [
+      "The historical archives are independent publishers, not official PCSO databases, although selected dates are cross-checked against GMA News publications.",
+      "Official PCSO publications remain the preferred authority when available.",
+      "The automatic incremental sync endpoint still uses pcsolotto.org and may lag; this static update does not replace or falsely certify that sync source.",
+      "This supplement does not fill earlier gaps before 2026-08-16."
+    ],
+    "additional_verification": [
+      {
+        "period": "2026-08-16 through 2026-08-31",
+        "source": "SwertengTao 2026 3D history, with GMA News page cross-checks for August 16, 17, 18, 21, 22, 27, 28, 29, 30 and 31.",
+        "url": "https://swertengtao.com/3d/2026/"
+      },
+      {
+        "period": "2026-09-01 through 2026-09-05",
+        "source": "BPSPin recent history and GMA News daily result pages.",
+        "url": "https://bpspin.com/swertres-result/"
+      }
+    ],
+    "corrections": [
+      {
+        "date": "2026-09-04",
+        "prior_value": "427|496|427",
+        "corrected_value": "082|496|427",
+        "reason": "BPSPin reports 082 / 496 / 427; GMA News independently confirms the 5 PM result 496.",
+        "sources": [
+          "https://bpspin.com/swertres-result/",
+          "https://www.gmanetwork.com/news/lotto/results/swertres5pm-september-04-2026/"
+        ]
+      },
+      {
+        "date": "2026-09-05",
+        "prior_value": "892|540|892",
+        "corrected_value": "001|540|892",
+        "reason": "GMA News reports Swertres 2 PM 001, 5 PM 540 and 9 PM 892.",
+        "sources": [
+          "https://www.gmanetwork.com/news/lotto/results-september-05-2026/",
+          "https://bpspin.com/swertres-result/"
+        ]
+      }
+    ]
+  }
+}
