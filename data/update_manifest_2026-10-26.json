@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "snapshot_date": "2026-10-27",
+  "updated_through": "2026-10-26",
+  "target_file": "data/new_machine.json",
+  "start_date_added": "2026-08-16",
+  "end_date_added": "2026-10-26",
+  "added_full_day_records": 72,
+  "dataset_rows_after_update": 1202,
+  "storage_format": "Each result is represented as three separate digit integers; leading zeros remain preserved.",
+  "provenance": {
+    "classification": "independently compiled public result archive; not an official PCSO database",
+    "archive_source": "LottoBot 3D Lotto public archive",
+    "source_urls": [
+      "https://lottobot.ai/3d-lotto/history/2026/august",
+      "https://lottobot.ai/3d-lotto/history/2026/september",
+      "https://lottobot.ai/3d-lotto/history/2026/october"
+    ],
+    "cross_checks": [
+      {
+        "period": "2026-09-06 through 2026-10-26",
+        "slot": "2 PM",
+        "method": "All 51 rows matched the user-provided results."
+      },
+      {
+        "period": "2026-09-06 through 2026-10-26",
+        "slot": "5 PM",
+        "method": "All 51 rows matched the user-provided results."
+      },
+      {
+        "period": "2026-09-06 through 2026-10-18",
+        "slot": "9 PM",
+        "method": "All 43 rows matched the user-provided results."
+      },
+      {
+        "date": "2026-10-26",
+        "all_slots": [
+          "158",
+          "987",
+          "978"
+        ],
+        "source_urls": [
+          "https://www.gmanetwork.com/news/lotto/results-october-26-2026/",
+          "https://lotto.works/en/results/3d-lotto/"
+        ]
+      }
+    ],
+    "limitations": [
+      "The historical archive is an independent publisher, not operated by PCSO.",
+      "Official PCSO publications remain the preferred authority when available.",
+      "The automatic incremental sync endpoint still uses pcsolotto.org and may lag; this static update does not replace or falsely certify that sync source.",
+      "This supplement does not fill earlier gaps before 2026-08-16."
+    ]
+  }
+}

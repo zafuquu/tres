@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "seed": "node scripts/seed.mjs",
+    "validate-data": "node scripts/validate-data.mjs",
+    "seed": "npm run validate-data && node scripts/seed.mjs",
     "analyze": "node scripts/analyze.mjs"
   },
   "dependencies": {

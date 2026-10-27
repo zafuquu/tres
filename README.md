@@ -5,8 +5,7 @@ backed by a real Postgres database — so your data follows you across
 devices, not just one browser. Old-machine / current-machine / combined
 views, digit-frequency heatmap, pattern checks, monthly clustering, the
 "Angle Guide" folk-method checker, and a Prediction Lab with its own
-backtested scoring model. Includes a "Sync now" button that tries to pull
-new results automatically, with manual entry always available as a fallback.
+backtested scoring model. Includes a same-origin `/api/sync` endpoint and a scheduled Vercel request, with manual entry available as a fallback.
 
 ## Everything lives in one place now
 
@@ -40,9 +39,7 @@ remember to redeploy. Deploy this one project and everything works together.
    npm install
    npm run seed
    ```
-   This loads all 3,905 historical draws (old + current machine) into
-   your new database. It's safe to re-run — it skips dates that are
-   already there.
+   This loads the validated snapshot from `data/old_machine.json` and `data/new_machine.json` (6,648 full-day rows in the 2026-10-26 snapshot). It's safe to re-run — it inserts missing dates but does not overwrite existing database rows.
 
 ## 3. Deploy to Vercel
 
@@ -77,15 +74,11 @@ the same database backs all of them.
 `vercel.json` includes a cron job that hits `/api/sync` once a day at
 13:30 UTC (9:30 PM Manila time, after the last draw). Check your Vercel
 plan's cron limits — free/Hobby plans have historically restricted how
-often crons can run; adjust the schedule in `vercel.json` if needed, or
-just rely on the manual "Sync now" button, which works regardless of plan.
+often crons can run; adjust the schedule in `vercel.json` if needed, or call `/api/sync` directly. The current dashboard does not render a dedicated Sync button; the manual draw-entry form remains the reliable fallback.
 
 **Be aware:** the third-party results source (`pcsolotto.org`) had data
 noticeably behind real time (weeks old in testing) and its filtering
-didn't always behave as documented when this was built. The sync code
-is written defensively around that — it double-checks every result
-itself rather than trusting the API's filters — but if a day's result
-never shows up, the manual entry form right next to it always works.
+didn't always behave as documented when this was built. The sync code scans each returned day's own `games` array instead of trusting the source's filter, but this does not eliminate source lag or guarantee full historical backfill. Verify results against an independent archive and official PCSO publications when available. If a result is missing, the manual entry form remains the fallback.
 
 ## A note on Prediction Lab
 
@@ -99,6 +92,16 @@ tested frequency, sequential, calendar, and machine-learning models
 extensively against this same data and found none of them beat random
 chance — Prediction Lab is offered as the same kind of exploratory tool,
 not a validated predictor. Read its backtest numbers with that in mind.
+
+## Historical snapshot and data validation
+
+- Retired-machine file: 5,446 dated full-day records, 2008-04-01 through 2023-06-30.
+- Current-machine file: 1,202 dated full-day records, 2023-07-01 through 2026-10-26.
+- Combined repository snapshot: 6,648 date-unique records. Calendar gaps are retained when the source archive has no row; the validator reports them as informational rather than inventing draw values.
+- The August 16–October 26, 2026 supplement is documented in [the data update manifest](data/update_manifest_2026-10-26.json). Recent results you supplied were compared against the public archive; October 26 was cross-checked against GMA News. The archive is an independent source, not an official PCSO database.
+- The browser fallback and seed script both read the JSON files as the single data source. Run `npm run validate-data` before seeding; `npm run seed` runs validation automatically. Seeding inserts missing dates but intentionally will not overwrite existing database rows.
+
+The automatic sync route still uses `pcsolotto.org`, which this README notes has lagged in prior checks. It is a best-effort incremental sync, not the source of this historical backfill. The daily Vercel cron uses a GET request, which is supported by the route after this update. The dashboard currently has no dedicated Sync button.
 
 ## Local development
 

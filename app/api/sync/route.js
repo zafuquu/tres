@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -64,7 +64,7 @@ async function fetchNewDrawsFromSource(sinceDateExclusive) {
   return found;
 }
 
-export async function POST() {
+async function runSync() {
   try {
     await ensureSchema();
 
@@ -117,4 +117,14 @@ export async function POST() {
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err?.message || err) }, { status: 200, headers: CORS_HEADERS });
   }
+}
+
+
+// Vercel Cron sends GET requests. Keep POST supported for manual/API callers.
+export async function GET() {
+  return runSync();
+}
+
+export async function POST() {
+  return runSync();
 }

@@ -3,7 +3,7 @@
 //
 //   npm run seed
 //
-// Loads the 3,905 historical draws (old + current machine) bundled
+// Loads all validated historical rows (old + current machine) bundled
 // in data/old_machine.json and data/new_machine.json into the
 // database. Safe to re-run — uses ON CONFLICT DO NOTHING, so it
 // won't overwrite anything you've already added manually or synced.
