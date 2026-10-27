@@ -49,8 +49,18 @@ function twoTailP(z) {
   return 2 * (1 - normCdf(Math.abs(z)));
 }
 
+function rowSlotOrNull(row, offset) {
+  const digits = row.slice(offset, offset + 3);
+  return digits.every((digit) => Number.isInteger(digit) && digit >= 0 && digit <= 9) ? digits : null;
+}
+
 function rowToRecord(row) {
-  return { date: row[0], slot1: [row[1], row[2], row[3]], slot2: [row[4], row[5], row[6]], slot3: [row[7], row[8], row[9]] };
+  return {
+    date: row[0],
+    slot1: rowSlotOrNull(row, 1),
+    slot2: rowSlotOrNull(row, 4),
+    slot3: rowSlotOrNull(row, 7),
+  };
 }
 
 const STORAGE_KEY = "swertres_ledger_draws_v2";
@@ -91,9 +101,14 @@ export default function SwertresLedger() {
     // then reconcile with Supabase in the background.
     if (local?.value) {
       try {
-        setAllRecords(mergeRecords(JSON.parse(local.value), []));
+        // Merge the refreshed bundled snapshot into old browser caches while
+        // preserving locally entered values for any dates already present.
+        const merged = mergeRecords(JSON.parse(local.value), seeded);
+        setAllRecords(merged);
+        storage.set(STORAGE_KEY, JSON.stringify(merged)).catch(() => {});
       } catch {
         setAllRecords(seeded);
+        storage.set(STORAGE_KEY, JSON.stringify(seeded)).catch(() => {});
       }
     } else {
       setAllRecords(seeded);
