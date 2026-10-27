@@ -105,14 +105,14 @@ export default function SwertresLedger() {
         // preserving locally entered values for any dates already present.
         const merged = mergeRecords(JSON.parse(local.value), seeded);
         setAllRecords(merged);
-        storage.set(STORAGE_KEY, JSON.stringify(merged)).catch(() => {});
+        storage.setLocal(STORAGE_KEY, JSON.stringify(merged));
       } catch {
         setAllRecords(seeded);
-        storage.set(STORAGE_KEY, JSON.stringify(seeded)).catch(() => {});
+        storage.setLocal(STORAGE_KEY, JSON.stringify(seeded));
       }
     } else {
       setAllRecords(seeded);
-      storage.set(STORAGE_KEY, JSON.stringify(seeded)).catch(() => {});
+      storage.setLocal(STORAGE_KEY, JSON.stringify(seeded));
     }
 
     (async () => {
