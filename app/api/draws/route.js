@@ -1,6 +1,50 @@
 import { NextResponse } from "next/server";
 import { query, ensureSchema, rowToRecord } from "../../../lib/db";
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+let snapshotReconciled = false;
+let snapshotReconcilePromise = null;
+
+// Fill missing database dates/slots from the verified bundled snapshot without
+// overwriting any populated digits that users have already entered.
+async function reconcileBundledSnapshot() {
+  if (snapshotReconciled) return;
+  if (snapshotReconcilePromise) return snapshotReconcilePromise;
+
+  snapshotReconcilePromise = (async () => {
+    const dataDir = join(process.cwd(), "data");
+    const oldRows = JSON.parse(readFileSync(join(dataDir, "old_machine.json"), "utf8"));
+    const newRows = JSON.parse(readFileSync(join(dataDir, "new_machine.json"), "utf8"));
+    const rows = [...oldRows, ...newRows].map((row) => ({
+      draw_date: row[0],
+      slot1_p1: row[1] ?? null, slot1_p2: row[2] ?? null, slot1_p3: row[3] ?? null,
+      slot2_p1: row[4] ?? null, slot2_p2: row[5] ?? null, slot2_p3: row[6] ?? null,
+      slot3_p1: row[7] ?? null, slot3_p2: row[8] ?? null, slot3_p3: row[9] ?? null,
+    }));
+
+    const sql = [
+      "INSERT INTO draws (draw_date, slot1_p1, slot1_p2, slot1_p3, slot2_p1, slot2_p2, slot2_p3, slot3_p1, slot3_p2, slot3_p3, source)",
+      "SELECT snapshot.draw_date::date, snapshot.slot1_p1, snapshot.slot1_p2, snapshot.slot1_p3, snapshot.slot2_p1, snapshot.slot2_p2, snapshot.slot2_p3, snapshot.slot3_p1, snapshot.slot3_p2, snapshot.slot3_p3, 'historical'",
+      "FROM jsonb_to_recordset($1::jsonb) AS snapshot(draw_date text, slot1_p1 smallint, slot1_p2 smallint, slot1_p3 smallint, slot2_p1 smallint, slot2_p2 smallint, slot2_p3 smallint, slot3_p1 smallint, slot3_p2 smallint, slot3_p3 smallint)",
+      "ON CONFLICT (draw_date) DO UPDATE SET",
+      "slot1_p1 = COALESCE(draws.slot1_p1, EXCLUDED.slot1_p1), slot1_p2 = COALESCE(draws.slot1_p2, EXCLUDED.slot1_p2), slot1_p3 = COALESCE(draws.slot1_p3, EXCLUDED.slot1_p3),",
+      "slot2_p1 = COALESCE(draws.slot2_p1, EXCLUDED.slot2_p1), slot2_p2 = COALESCE(draws.slot2_p2, EXCLUDED.slot2_p2), slot2_p3 = COALESCE(draws.slot2_p3, EXCLUDED.slot2_p3),",
+      "slot3_p1 = COALESCE(draws.slot3_p1, EXCLUDED.slot3_p1), slot3_p2 = COALESCE(draws.slot3_p2, EXCLUDED.slot3_p2), slot3_p3 = COALESCE(draws.slot3_p3, EXCLUDED.slot3_p3);"
+    ].join("\n");
+    await query(sql, [JSON.stringify(rows)]);
+    snapshotReconciled = true;
+  })();
+
+  try {
+    await snapshotReconcilePromise;
+  } finally {
+    snapshotReconcilePromise = null;
+  }
+}
+
+
 export const dynamic = "force-dynamic";
 
 const CORS_HEADERS = {
@@ -16,6 +60,7 @@ export async function OPTIONS() {
 export async function GET() {
   try {
     await ensureSchema();
+    await reconcileBundledSnapshot();
     const { rows } = await query("SELECT * FROM draws ORDER BY draw_date ASC;");
     return NextResponse.json({ records: rows.map(rowToRecord) }, { headers: CORS_HEADERS });
   } catch (err) {
