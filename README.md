@@ -39,7 +39,7 @@ remember to redeploy. Deploy this one project and everything works together.
    npm install
    npm run seed
    ```
-   This loads the validated snapshot from `data/old_machine.json` and `data/new_machine.json` (6,648 full-day rows in the 2026-10-26 snapshot). It's safe to re-run — it inserts missing dates but does not overwrite existing database rows.
+   This loads the validated snapshot from `data/old_machine.json` and `data/new_machine.json` (6,649 dated rows in the 2026-10-27 snapshot, including today's partial record). The seeder allows explicitly missing draw slots and safely re-runs without overwriting existing database rows.
 
 ## 3. Deploy to Vercel
 
@@ -96,9 +96,9 @@ not a validated predictor. Read its backtest numbers with that in mind.
 ## Historical snapshot and data validation
 
 - Retired-machine file: 5,446 dated full-day records, 2008-04-01 through 2023-06-30.
-- Current-machine file: 1,202 dated full-day records, 2023-07-01 through 2026-10-26.
-- Combined repository snapshot: 6,648 date-unique records. Calendar gaps are retained when the source archive has no row; the validator reports them as informational rather than inventing draw values.
-- The August 16–October 26, 2026 supplement is documented in [the data update manifest](data/update_manifest_2026-10-26.json). Recent results you supplied were compared against the public archive; October 26 was cross-checked against GMA News. The archive is an independent source, not an official PCSO database.
+- Current-machine file: 1,203 dated records, 2023-07-01 through 2026-10-27. The October 27 record contains the verified 2PM result `165` and 5PM result `241`; 9PM was still marked pending in the public result pages checked for this snapshot, so that slot is stored as an explicit null triplet rather than a guessed result.
+- Combined repository snapshot: 6,649 date-unique records, of which the latest day is partial. Calendar gaps are retained when the source archive has no row; the validator reports them as informational rather than inventing draw values.
+- The August 16–October 26 supplement is documented in [the prior data update manifest](data/update_manifest_2026-10-26.json). The latest result refresh is documented in [the October 27 manifest](data/update_manifest_2026-10-27.json). Sources are independent public result publishers, not a direct official PCSO database; verify against PCSO when claiming prizes.
 - The browser fallback and seed script both read the JSON files as the single data source. Run `npm run validate-data` before seeding; `npm run seed` runs validation automatically. Seeding inserts missing dates but intentionally will not overwrite existing database rows.
 
 The automatic sync route still uses `pcsolotto.org`, which this README notes has lagged in prior checks. It is a best-effort incremental sync, not the source of this historical backfill. The daily Vercel cron uses a GET request, which is supported by the route after this update. The dashboard currently has no dedicated Sync button.
