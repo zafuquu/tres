@@ -12,9 +12,12 @@
     "classification": "independently compiled public result archive; not an official PCSO database",
     "archive_source": "LottoBot 3D Lotto public archive",
     "source_urls": [
-      "https://lottobot.ai/3d-lotto/history/2026/august",
-      "https://lottobot.ai/3d-lotto/history/2026/september",
-      "https://lottobot.ai/3d-lotto/history/2026/october"
+      "https://www.gmanetwork.com/news/lotto/results-august-16-2026/",
+      "https://www.gmanetwork.com/news/lotto/results-september-05-2026/",
+      "https://www.gmanetwork.com/news/lotto/results-october-26-2026/",
+      "https://swertengtao.com/3d/2026/",
+      "https://bpspin.com/swertres-result/",
+      "https://lotto.works/en/results/3d-lotto/"
     ],
     "cross_checks": [
       {
@@ -46,10 +49,44 @@
       }
     ],
     "limitations": [
-      "The historical archive is an independent publisher, not operated by PCSO.",
+      "The historical archives are independent publishers, not official PCSO databases, although selected dates are cross-checked against GMA News publications.",
       "Official PCSO publications remain the preferred authority when available.",
       "The automatic incremental sync endpoint still uses pcsolotto.org and may lag; this static update does not replace or falsely certify that sync source.",
       "This supplement does not fill earlier gaps before 2026-08-16."
+    ],
+    "additional_verification": [
+      {
+        "period": "2026-08-16 through 2026-08-31",
+        "source": "SwertengTao 2026 3D history, with GMA News page cross-checks for August 16, 17, 18, 21, 22, 27, 28, 29, 30 and 31.",
+        "url": "https://swertengtao.com/3d/2026/"
+      },
+      {
+        "period": "2026-09-01 through 2026-09-05",
+        "source": "BPSPin recent history and GMA News daily result pages.",
+        "url": "https://bpspin.com/swertres-result/"
+      }
+    ],
+    "corrections": [
+      {
+        "date": "2026-09-04",
+        "prior_value": "427|496|427",
+        "corrected_value": "082|496|427",
+        "reason": "BPSPin reports 082 / 496 / 427; GMA News independently confirms the 5 PM result 496.",
+        "sources": [
+          "https://bpspin.com/swertres-result/",
+          "https://www.gmanetwork.com/news/lotto/results/swertres5pm-september-04-2026/"
+        ]
+      },
+      {
+        "date": "2026-09-05",
+        "prior_value": "892|540|892",
+        "corrected_value": "001|540|892",
+        "reason": "GMA News reports Swertres 2 PM 001, 5 PM 540 and 9 PM 892.",
+        "sources": [
+          "https://www.gmanetwork.com/news/lotto/results-september-05-2026/",
+          "https://bpspin.com/swertres-result/"
+        ]
+      }
     ]
   }
 }
