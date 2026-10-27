@@ -2,7 +2,7 @@
   "schema_version": 1,
   "snapshot_date": "2026-10-27",
   "latest_record_date": "2026-10-27",
-  "latest_complete_date": "2026-10-26",
+  "latest_complete_date": "2026-10-27",
   "target_file": "data/new_machine.json",
   "records_added": 1,
   "complete_records_added": 0,
@@ -28,23 +28,25 @@
         ]
       },
       "9PM": {
-        "result": null,
-        "status": "pending_on_sources_checked",
-        "sources": [
+        "result": "838",
+        "status": "user_supplied_not_independently_verified",
+        "source": "User supplied in chat on 2026-10-27",
+        "sources_checked": [
           "https://www.lottopcso.com/swertres-result-today/",
           "https://swertres.in/"
-        ]
+        ],
+        "note": "The public pages checked still displayed 9PM as pending at capture time; the value 838 is recorded from the user's report and should be compared against official PCSO publication when available."
       }
     }
   },
   "provenance": {
     "classification": "Compiled from independent public result-reporting sites; not a direct PCSO API export.",
-    "collection_note": "At the time of this snapshot, the sources checked reported 2PM 165 and 5PM 241 but still displayed the 9PM result as pending. The 9PM slot is deliberately left empty until corroborated.",
+    "collection_note": "2PM 165 and 5PM 241 were listed by public result publishers. The user subsequently supplied 9PM result 838; the sources checked at that time still displayed 9PM as pending, so 838 is retained as user-supplied and not independently verified within this update.",
     "prior_snapshot_manifest": "data/update_manifest_2026-10-26.json",
     "limitations": [
-      "The reported values should be checked against official PCSO publications before prize claims.",
-      "The 9PM result is not present because the public sources checked still showed it as pending; this does not assert that the draw was canceled or not held.",
-      "The automatic incremental sync endpoint still uses pcsolotto.org and may lag; this static snapshot does not certify that endpoint as a reliable live source."
+      "The 9PM 838 value was supplied by the user and did not appear yet on the public publisher pages checked during this update; verify against official PCSO publications when available.",
+      "The automatic incremental sync endpoint still uses pcsolotto.org and may lag; this snapshot does not certify that endpoint as reliable live data.",
+      "Public publishers are not a direct official PCSO database/API export."
     ]
   },
   "sources_checked": [
@@ -83,6 +85,13 @@
         "241"
       ],
       "nine_pm_status": "Pending"
+    },
+    {
+      "name": "User-provided result",
+      "date": "2026-10-27",
+      "slot": "9PM",
+      "result": "838",
+      "verification_status": "not independently verified by the public result pages checked in this update"
     }
   ]
 }
