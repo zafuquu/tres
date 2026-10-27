@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "snapshot_date": "2026-10-27",
+  "latest_record_date": "2026-10-27",
+  "latest_complete_date": "2026-10-26",
+  "target_file": "data/new_machine.json",
+  "records_added": 1,
+  "complete_records_added": 0,
+  "partial_records_added": 1,
+  "dataset_rows_after_update": 1203,
+  "storage_format": "Each date contains nine digit positions grouped into 2PM, 5PM, and 9PM triplets. A fully null triplet means that slot has not yet been verified and is not a winning number.",
+  "results": {
+    "2026-10-27": {
+      "2PM": {
+        "result": "165",
+        "status": "reported",
+        "sources": [
+          "https://phlottoresults.com/results/3d/2026-10-27",
+          "https://www.lottopcso.com/swertres-result-today/"
+        ]
+      },
+      "5PM": {
+        "result": "241",
+        "status": "reported",
+        "sources": [
+          "https://www.lottopcso.com/swertres-result-today/",
+          "https://swertres.in/"
+        ]
+      },
+      "9PM": {
+        "result": null,
+        "status": "pending_on_sources_checked",
+        "sources": [
+          "https://www.lottopcso.com/swertres-result-today/",
+          "https://swertres.in/"
+        ]
+      }
+    }
+  },
+  "provenance": {
+    "classification": "Compiled from independent public result-reporting sites; not a direct PCSO API export.",
+    "collection_note": "At the time of this snapshot, the sources checked reported 2PM 165 and 5PM 241 but still displayed the 9PM result as pending. The 9PM slot is deliberately left empty until corroborated.",
+    "prior_snapshot_manifest": "data/update_manifest_2026-10-26.json",
+    "limitations": [
+      "The reported values should be checked against official PCSO publications before prize claims.",
+      "The 9PM result is not present because the public sources checked still showed it as pending; this does not assert that the draw was canceled or not held.",
+      "The automatic incremental sync endpoint still uses pcsolotto.org and may lag; this static snapshot does not certify that endpoint as a reliable live source."
+    ]
+  },
+  "sources_checked": [
+    {
+      "name": "PH Lotto Results",
+      "url": "https://phlottoresults.com/results/3d/2026-10-27",
+      "checked_for": [
+        "2PM"
+      ],
+      "result_reported": "165"
+    },
+    {
+      "name": "Lotto PCSO",
+      "url": "https://www.lottopcso.com/swertres-result-today/",
+      "checked_for": [
+        "2PM",
+        "5PM",
+        "9PM"
+      ],
+      "results_reported": [
+        "165",
+        "241"
+      ],
+      "nine_pm_status": "Stand by"
+    },
+    {
+      "name": "Swertres.in",
+      "url": "https://swertres.in/",
+      "checked_for": [
+        "2PM",
+        "5PM",
+        "9PM"
+      ],
+      "results_reported": [
+        "165",
+        "241"
+      ],
+      "nine_pm_status": "Pending"
+    }
+  ]
+}
