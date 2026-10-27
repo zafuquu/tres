@@ -41,8 +41,17 @@ function loadAndValidate(file) {
     parseRealDate(row[0], file.name, index);
     if (seen.has(row[0])) fail(`data/${file.name} contains duplicate date ${row[0]}`);
     if (previous && row[0] <= previous) fail(`data/${file.name} dates must be strictly ascending; issue at ${row[0]}`);
-    if (row.slice(1).some((digit) => !Number.isInteger(digit) || digit < 0 || digit > 9)) {
-      fail(`data/${file.name} row ${row[0]} contains a digit outside integer range 0-9`);
+    const slots = [row.slice(1, 4), row.slice(4, 7), row.slice(7, 10)];
+    let completedSlots = 0;
+    slots.forEach((slot, slotIndex) => {
+      if (slot.every((digit) => digit === null)) return; // Explicitly not yet published / not recorded.
+      if (slot.some((digit) => !Number.isInteger(digit) || digit < 0 || digit > 9)) {
+        fail(`data/${file.name} row ${row[0]} slot ${slotIndex + 1} must contain three valid digits or three nulls`);
+      }
+      completedSlots++;
+    });
+    if (completedSlots === 0) {
+      fail(`data/${file.name} row ${row[0]} must include at least one complete draw slot`);
     }
     seen.add(row[0]);
     previous = row[0];
@@ -58,8 +67,8 @@ if (overlap) fail(`old/current machine histories overlap on ${overlap[0]}`);
 if (oldRows[oldRows.length - 1][0] >= newRows[0][0]) {
   fail("retired-machine date range must end before the current-machine date range begins");
 }
-if (newRows[newRows.length - 1][0] < "2026-10-26") {
-  fail("current-machine snapshot is unexpectedly older than the documented 2026-10-26 refresh");
+if (newRows[newRows.length - 1][0] < "2026-10-27") {
+  fail("current-machine snapshot is unexpectedly older than the documented 2026-10-27 refresh");
 }
 
 function missingCalendarDays(rows) {
@@ -75,4 +84,8 @@ function missingCalendarDays(rows) {
 console.log("DATA VALIDATION PASSED");
 console.log(`Retired machine: ${oldRows.length.toLocaleString()} rows, ${oldRows[0][0]} through ${oldRows.at(-1)[0]}, ${missingCalendarDays(oldRows)} unfilled calendar days reported (informational)`);
 console.log(`Current machine: ${newRows.length.toLocaleString()} rows, ${newRows[0][0]} through ${newRows.at(-1)[0]}, ${missingCalendarDays(newRows)} unfilled calendar days reported (informational)`);
-console.log(`Combined: ${(oldRows.length + newRows.length).toLocaleString()} unique dated rows; all rows have 9 valid digit positions.`);
+const partialDays = newRows.filter((row) =>
+  [row.slice(1, 4), row.slice(4, 7), row.slice(7, 10)].some((slot) => slot.every((digit) => digit === null))
+).length;
+console.log(`Current-machine records with at least one unreported slot: ${partialDays.toLocaleString()}`);
+console.log(`Combined: ${(oldRows.length + newRows.length).toLocaleString()} unique dated rows; each slot is three valid digits or an explicit null triplet.`);
